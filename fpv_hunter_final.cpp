@@ -54,6 +54,7 @@
 #include <QSlider>
 #include <QTableWidget>
 #include <QHeaderView>
+#include <QDebug>
 
 #include <cmath>
 #include <vector>
@@ -69,10 +70,6 @@ extern "C" {
 #include <iio.h>
 }
 
-// ====================================================================
-// ЦВЕТА
-// ====================================================================
-
 const QString COLOR_BLACK = "#0a0a0a";
 const QString COLOR_DARK_GRAY = "#1a1a1a";
 const QString COLOR_GRAY = "#2d2d2d";
@@ -85,10 +82,6 @@ const QString COLOR_RED = "#e74c3c";
 const QString COLOR_GREEN_LIGHT = "#2ecc71";
 const QString COLOR_BLUE = "#3498db";
 const QString COLOR_YELLOW = "#f1c40f";
-
-// ====================================================================
-// СТРУКТУРЫ
-// ====================================================================
 
 struct RecordingSettings {
     QString savePath;
@@ -174,19 +167,14 @@ struct SignalInfo {
 
 static int SignalInfoMetaType = qRegisterMetaType<SignalInfo>("SignalInfo");
 
-// ====================================================================
-// ПРЕДВАРИТЕЛЬНЫЕ ОБЪЯВЛЕНИЯ
-// ====================================================================
-
 class PlutoAdvanced;
 class VideoThumbnail;
 class FullscreenVideoWindow;
 class SpectrumWidget;
 class FPVHunterPro;
-class VoiceManager;
 
 // ====================================================================
-// КЛАСС ГОЛОСОВЫХ ОПОВЕЩЕНИЙ (Windows)
+// КЛАСС ГОЛОСОВЫХ ОПОВЕЩЕНИЙ
 // ====================================================================
 
 class VoiceManager {
@@ -194,15 +182,8 @@ public:
     VoiceManager() : m_enabled(true) {}
     
     void say(const QString& text) {
-#ifdef Q_OS_WIN
         if (!m_enabled) return;
-        std::wstring wstr = text.toStdWString();
-        // Используем Windows SAPI
-        // В упрощённой версии просто выводим в статус
         qDebug() << "[VOICE]" << text;
-#else
-        qDebug() << "[VOICE]" << text;
-#endif
     }
     
     void setEnabled(bool enabled) { m_enabled = enabled; }
@@ -213,7 +194,7 @@ private:
 };
 
 // ====================================================================
-// КЛАСС PLUTO (расширенный)
+// КЛАСС PLUTO (все методы public)
 // ====================================================================
 
 class PlutoAdvanced {
@@ -269,7 +250,6 @@ public:
         connected = false;
     }
     
-    // Getters
     QString getLastError() const { return m_lastError; }
     QString getSerial() const { return m_serial; }
     QString getFirmwareVersion() const { return m_firmware; }
@@ -282,7 +262,6 @@ public:
     double getFreq() const { return freq; }
     bool isAGC() const { return agc_enabled; }
     
-    // Настройка
     bool setFrequency(double freq) {
         if (!connected || !phy) return false;
         this->freq = freq;
@@ -360,7 +339,6 @@ public:
         return true;
     }
     
-private:
     QString getSerial() {
         if (!ctx) return "Неизвестно";
         const char *serial = iio_context_get_attr_value(ctx, "serial");
@@ -387,6 +365,7 @@ private:
         return hw ? QString(hw) : "Неизвестно";
     }
     
+private:
     struct iio_context *ctx;
     struct iio_device *phy;
     struct iio_device *rx;
@@ -406,153 +385,23 @@ private:
 };
 
 // ====================================================================
-// ПРОДОЛЖЕНИЕ В СЛЕДУЮЩЕМ СООБЩЕНИИ...
-// ====================================================================
-
-// ====================================================================
-// ЧАСТЬ 2: ГЛАВНОЕ ОКНО И ВИДЖЕТЫ
+// КЛАССЫ ВИДЖЕТОВ (объявлены ниже, но реализованы после FPVHunterPro)
 // ====================================================================
 
 class SpectrumWidget : public QWidget {
 public:
-    SpectrumWidget(QWidget* parent = nullptr) : QWidget(parent) {
-        setMinimumHeight(180);
-        setStyleSheet(QString("background-color: %1; border: 1px solid %2; border-radius: 4px;")
-            .arg(COLOR_BLACK).arg(COLOR_GRAY));
-        setMouseTracking(true);
-    }
-    
-    void setData(const std::vector<double>& freqs, const std::vector<double>& powers) {
-        m_freqs = freqs;
-        m_powers = powers;
-        update();
-    }
-    
-    void addMarker(const SpectrumMarker& marker) {
-        m_markers.push_back(marker);
-        update();
-    }
-    
-    void clearMarkers() {
-        m_markers.clear();
-        update();
-    }
-    
-    void setIndicator(double freq, double power) {
-        m_indicatorFreq = freq;
-        m_indicatorPower = power;
-        update();
-    }
-    
+    SpectrumWidget(QWidget* parent = nullptr);
+    void setData(const std::vector<double>& freqs, const std::vector<double>& powers);
+    void addMarker(const SpectrumMarker& marker);
+    void clearMarkers();
+    void setIndicator(double freq, double power);
 protected:
-    void paintEvent(QPaintEvent* event) override {
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing);
-        int w = width();
-        int h = height();
-        
-        // Фон
-        painter.fillRect(0, 0, w, h, QColor(COLOR_BLACK));
-        
-        // Сетка
-        painter.setPen(QColor(COLOR_GRAY));
-        for (int i = 0; i < 10; ++i) {
-            int x = i * w / 10;
-            painter.drawLine(x, 0, x, h);
-        }
-        for (int i = 0; i < 5; ++i) {
-            int y = i * h / 5;
-            painter.drawLine(0, y, w, y);
-        }
-        
-        // Спектр
-        if (!m_freqs.empty() && !m_powers.empty()) {
-            QPen pen;
-            pen.setColor(QColor(COLOR_ORANGE));
-            pen.setWidth(2);
-            painter.setPen(pen);
-            for (size_t i = 1; i < m_freqs.size(); ++i) {
-                int x1 = mapFreqToX(m_freqs[i-1], w);
-                int y1 = mapPowerToY(m_powers[i-1], h);
-                int x2 = mapFreqToX(m_freqs[i], w);
-                int y2 = mapPowerToY(m_powers[i], h);
-                painter.drawLine(x1, y1, x2, y2);
-            }
-        }
-        
-        // Маркеры
-        for (const auto& marker : m_markers) {
-            int x = mapFreqToX(marker.frequency / 1e6, w);
-            int y = mapPowerToY(marker.power, h);
-            
-            // Древко флага
-            painter.setPen(Qt::NoPen);
-            painter.setBrush(marker.color);
-            painter.drawRect(x - 2, y - 20, 4, 20);
-            
-            // Полотно флага
-            QColor flagColor = marker.color;
-            flagColor.setAlpha(200);
-            painter.setBrush(flagColor);
-            painter.drawRoundedRect(x + 2, y - 20, 65, 16, 4, 4);
-            
-            // Текст на флаге
-            painter.setPen(Qt::white);
-            QFont font = painter.font();
-            font.setPointSize(7);
-            painter.setFont(font);
-            QString label = marker.type;
-            if (label.length() > 8) label = label.left(8) + "...";
-            painter.drawText(x + 6, y - 8, label);
-            
-            // Частота под флагом
-            painter.setPen(QColor(COLOR_WHITE));
-            font.setPointSize(6);
-            painter.setFont(font);
-            painter.drawText(x - 15, y + 18, 
-                QString::number(marker.frequency / 1e6, 'f', 1) + " МГц");
-        }
-        
-        // Индикатор
-        if (m_indicatorFreq > 0) {
-            int x = mapFreqToX(m_indicatorFreq / 1e6, w);
-            painter.setPen(QPen(QColor(COLOR_GREEN), 2, Qt::DashLine));
-            painter.drawLine(x, 0, x, h);
-        }
-        
-        // Подписи осей
-        painter.setPen(QColor(COLOR_LIGHT_GRAY));
-        QFont font = painter.font();
-        font.setPointSize(7);
-        painter.setFont(font);
-        painter.drawText(0, h - 2, "100");
-        painter.drawText(w/4 - 10, h - 2, "1500");
-        painter.drawText(w/2 - 10, h - 2, "3000");
-        painter.drawText(3*w/4 - 10, h - 2, "4500");
-        painter.drawText(w - 20, h - 2, "6000");
-        
-        // Подпись "МГц"
-        painter.drawText(w - 30, 15, "МГц");
-        painter.drawText(2, 15, "dBFS");
-    }
-    
-    void mouseMoveEvent(QMouseEvent* event) override {
-        double freq = mapXToFreq(event->pos().x(), width());
-        setToolTip(QString("Частота: %1 МГц").arg(freq, 0, 'f', 1));
-        QWidget::mouseMoveEvent(event);
-    }
-    
+    void paintEvent(QPaintEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
 private:
-    int mapFreqToX(double freq, int width) const {
-        return (freq - 100) / 5900 * width;
-    }
-    int mapPowerToY(double power, int height) const {
-        return (power + 100) / 90 * height;
-    }
-    double mapXToFreq(int x, int width) const {
-        return 100 + (double)x / width * 5900;
-    }
-    
+    int mapFreqToX(double freq, int width) const;
+    int mapPowerToY(double power, int height) const;
+    double mapXToFreq(int x, int width) const;
     std::vector<double> m_freqs;
     std::vector<double> m_powers;
     std::vector<SpectrumMarker> m_markers;
@@ -560,94 +409,18 @@ private:
     double m_indicatorPower = 0;
 };
 
-// ====================================================================
-// ВИДЕО-ОКНО
-// ====================================================================
-
 class VideoThumbnail : public QFrame {
+    Q_OBJECT
 public:
-    VideoThumbnail(const SignalInfo& sig, FPVHunterPro* parent = nullptr) 
-        : QFrame((QWidget*)parent), m_signal(sig), m_mainWindow(parent) {
-        setFixedSize(200, 160);
-        setStyleSheet(QString("background-color: %1; border: 2px solid %2; border-radius: 8px;")
-            .arg(COLOR_DARK_GRAY).arg(COLOR_GRAY));
-        setCursor(Qt::PointingHandCursor);
-        
-        QVBoxLayout* layout = new QVBoxLayout(this);
-        layout->setSpacing(2);
-        layout->setContentsMargins(4, 4, 4, 4);
-        
-        m_videoLabel = new QLabel();
-        m_videoLabel->setFixedSize(180, 100);
-        m_videoLabel->setStyleSheet("background-color: #000000; border-radius: 4px;");
-        m_videoLabel->setAlignment(Qt::AlignCenter);
-        m_videoLabel->setText("📹");
-        QFont font = m_videoLabel->font();
-        font.setPointSize(24);
-        m_videoLabel->setFont(font);
-        layout->addWidget(m_videoLabel);
-        
-        m_infoLabel = new QLabel();
-        m_infoLabel->setStyleSheet(QString("color: %1; font-size: 9px;").arg(COLOR_LIGHT_GRAY));
-        m_infoLabel->setAlignment(Qt::AlignCenter);
-        updateInfo();
-        layout->addWidget(m_infoLabel);
-        
-        QHBoxLayout* btnLayout = new QHBoxLayout();
-        m_expandBtn = new QPushButton("↔ Развернуть");
-        m_expandBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; font-size: 8px; padding: 2px 6px; border-radius: 3px;")
-            .arg(COLOR_ORANGE).arg(COLOR_WHITE));
-        m_expandBtn->setCursor(Qt::PointingHandCursor);
-        btnLayout->addWidget(m_expandBtn);
-        
-        m_infoBtn = new QPushButton("ℹ️");
-        m_infoBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; font-size: 8px; padding: 2px 6px; border-radius: 3px;")
-            .arg(COLOR_GRAY).arg(COLOR_WHITE));
-        m_infoBtn->setCursor(Qt::PointingHandCursor);
-        btnLayout->addWidget(m_infoBtn);
-        
-        layout->addLayout(btnLayout);
-        setLayout(layout);
-        
-        connect(m_expandBtn, &QPushButton::clicked, this, &VideoThumbnail::onExpand);
-        connect(m_infoBtn, &QPushButton::clicked, this, &VideoThumbnail::onInfo);
-    }
-    
-    void updateFrame(const QImage& frame) {
-        if (!frame.isNull()) {
-            QPixmap pix = QPixmap::fromImage(frame).scaled(180, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            m_videoLabel->setPixmap(pix);
-        }
-    }
-    
-    void updateInfo() {
-        QString text = QString("%1 МГц | %2\n%3 | %4 dBFS")
-            .arg(m_signal.frequency / 1e6, 0, 'f', 1)
-            .arg(m_signal.type)
-            .arg(m_signal.modulation.isEmpty() ? "FM" : m_signal.modulation)
-            .arg(m_signal.power, 0, 'f', 1);
-        m_infoLabel->setText(text);
-    }
-    
-    void setSignal(const SignalInfo& newSignal) {
-        m_signal = newSignal;
-        updateInfo();
-        if (m_signal.hasVideo && !m_signal.lastFrame.isNull()) {
-            updateFrame(m_signal.lastFrame);
-        }
-    }
-    
+    VideoThumbnail(const SignalInfo& sig, FPVHunterPro* parent = nullptr);
+    void updateFrame(const QImage& frame);
+    void updateInfo();
+    void setSignal(const SignalInfo& newSignal);
     void onExpand();
     void onInfo();
-    void mousePressEvent(QMouseEvent* event) override {
-        if (event->button() == Qt::LeftButton) {
-            onExpand();
-        }
-        QFrame::mousePressEvent(event);
-    }
-    
+    void mousePressEvent(QMouseEvent* event) override;
     QPushButton* getExpandBtn() const { return m_expandBtn; }
-    
+    QPushButton* getInfoBtn() const { return m_infoBtn; }
 private:
     SignalInfo m_signal;
     QLabel* m_videoLabel;
@@ -658,235 +431,7 @@ private:
 };
 
 // ====================================================================
-// ПОЛНОЭКРАННОЕ ВИДЕО
-// ====================================================================
-
-class FullscreenVideoWindow : public QWidget {
-    Q_OBJECT
-
-public:
-    FullscreenVideoWindow(const SignalInfo& initialSignal, 
-                          const std::vector<SignalInfo>& allSignals,
-                          FPVHunterPro* parent = nullptr)
-        : QWidget((QWidget*)parent), m_currentSignal(initialSignal), m_allSignals(allSignals), m_mainWindow(parent) {
-        
-        setWindowTitle(QString("FPV Hunter - Видео на %1 МГц").arg(initialSignal.frequency / 1e6, 0, 'f', 1));
-        setMinimumSize(900, 650);
-        setStyleSheet(QString("background-color: %1;").arg(COLOR_BLACK));
-        setWindowFlags(Qt::Window);
-        
-        QHBoxLayout* mainLayout = new QHBoxLayout(this);
-        mainLayout->setSpacing(4);
-        mainLayout->setContentsMargins(4, 4, 4, 4);
-        
-        // Видео (левая часть)
-        QWidget* videoWidget = new QWidget();
-        videoWidget->setStyleSheet(QString("background-color: #000000; border: 2px solid %1; border-radius: 8px;")
-            .arg(COLOR_ORANGE));
-        QVBoxLayout* videoLayout = new QVBoxLayout(videoWidget);
-        
-        m_videoLabel = new QLabel();
-        m_videoLabel->setAlignment(Qt::AlignCenter);
-        m_videoLabel->setMinimumSize(640, 480);
-        m_videoLabel->setStyleSheet("color: #ffffff; font-size: 18px;");
-        m_videoLabel->setText("📹 Ожидание видео...");
-        QFont font = m_videoLabel->font();
-        font.setPointSize(36);
-        m_videoLabel->setFont(font);
-        videoLayout->addWidget(m_videoLabel);
-        
-        // Информация о сигнале
-        QHBoxLayout* infoLayout = new QHBoxLayout();
-        m_infoLabel = new QLabel();
-        m_infoLabel->setStyleSheet(QString("color: %1; font-size: 12px; padding: 4px; background-color: %2; border-radius: 4px;")
-            .arg(COLOR_WHITE).arg(COLOR_DARK_GRAY));
-        infoLayout->addWidget(m_infoLabel);
-        
-        m_recordingIndicator = new QLabel("⏸");
-        m_recordingIndicator->setStyleSheet(QString("color: %1; font-size: 14px; padding: 4px;")
-            .arg(COLOR_RED));
-        infoLayout->addWidget(m_recordingIndicator);
-        
-        infoLayout->addStretch();
-        videoLayout->addLayout(infoLayout);
-        
-        mainLayout->addWidget(videoWidget, 3);
-        
-        // Список других видео (правая часть)
-        QWidget* listWidget = new QWidget();
-        listWidget->setMaximumWidth(300);
-        listWidget->setStyleSheet(QString("background-color: %1; border-left: 2px solid %2;")
-            .arg(COLOR_DARK_GRAY).arg(COLOR_GRAY));
-        
-        QVBoxLayout* listLayout = new QVBoxLayout(listWidget);
-        
-        QLabel* titleLabel = new QLabel("📋 ДРУГИЕ ВИДЕО");
-        titleLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 14px; padding: 8px;")
-            .arg(COLOR_ORANGE));
-        listLayout->addWidget(titleLabel);
-        
-        QScrollArea* scrollArea = new QScrollArea();
-        scrollArea->setWidgetResizable(true);
-        scrollArea->setStyleSheet("border: none; background-color: transparent;");
-        
-        m_listContainer = new QWidget();
-        QVBoxLayout* containerLayout = new QVBoxLayout(m_listContainer);
-        containerLayout->setSpacing(6);
-        containerLayout->setContentsMargins(4, 4, 4, 4);
-        
-        // Заполняем список
-        for (const auto& s : allSignals) {
-            if (s.hasVideo && std::abs(s.frequency - initialSignal.frequency) > 0.1) {
-                QWidget* item = createVideoItem(s);
-                containerLayout->addWidget(item);
-            }
-        }
-        containerLayout->addStretch();
-        
-        scrollArea->setWidget(m_listContainer);
-        listLayout->addWidget(scrollArea);
-        
-        // Кнопка закрытия
-        QPushButton* closeBtn = new QPushButton("✕ Закрыть");
-        closeBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; padding: 8px; border-radius: 4px; font-weight: bold;")
-            .arg(COLOR_RED).arg(COLOR_WHITE));
-        closeBtn->setCursor(Qt::PointingHandCursor);
-        connect(closeBtn, &QPushButton::clicked, this, &FullscreenVideoWindow::close);
-        listLayout->addWidget(closeBtn);
-        
-        mainLayout->addWidget(listWidget, 1);
-        
-        // Таймер обновления
-        m_updateTimer = new QTimer(this);
-        connect(m_updateTimer, &QTimer::timeout, this, &FullscreenVideoWindow::updateVideoFrame);
-        m_updateTimer->start(50);
-    }
-    
-    void updateVideoFrame() {
-        // В реальном приложении здесь захват видео
-        // Сейчас просто рисуем демо-кадр
-        QImage frame(640, 480, QImage::Format_RGB888);
-        frame.fill(Qt::black);
-        QPainter painter(&frame);
-        painter.setPen(Qt::white);
-        for (int i = 0; i < 640; ++i) {
-            int y = 240 + 80 * sin(i * 0.02 + QDateTime::currentMSecsSinceEpoch() / 1000.0);
-            painter.drawPoint(i, y);
-        }
-        painter.setPen(QColor(COLOR_GREEN));
-        painter.drawText(20, 40, QString("📡 %1 МГц | %2 | %3 dBFS")
-            .arg(m_currentSignal.frequency / 1e6, 0, 'f', 1)
-            .arg(m_currentSignal.type)
-            .arg(m_currentSignal.power, 0, 'f', 1));
-        painter.drawText(20, 65, QString("🔄 %1 | %2")
-            .arg(m_currentSignal.modulation.isEmpty() ? "FM" : m_currentSignal.modulation)
-            .arg(m_currentSignal.standard.isEmpty() ? "PAL" : m_currentSignal.standard));
-        updateVideo(frame);
-    }
-    
-    void updateVideo(const QImage& frame) {
-        if (!frame.isNull()) {
-            QPixmap pix = QPixmap::fromImage(frame).scaled(m_videoLabel->width(), m_videoLabel->height(), 
-                Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            m_videoLabel->setPixmap(pix);
-        }
-    }
-    
-    void updateInfo() {
-        m_infoLabel->setText(QString("📡 %1 МГц | %2 | %3 dBFS | %4 | %5")
-            .arg(m_currentSignal.frequency / 1e6, 0, 'f', 1)
-            .arg(m_currentSignal.type)
-            .arg(m_currentSignal.power, 0, 'f', 1)
-            .arg(m_currentSignal.modulation.isEmpty() ? "FM" : m_currentSignal.modulation)
-            .arg(m_currentSignal.standard.isEmpty() ? "PAL" : m_currentSignal.standard));
-    }
-    
-    void switchToSignal(const SignalInfo& signal) {
-        m_currentSignal = signal;
-        updateInfo();
-        setWindowTitle(QString("FPV Hunter - Видео на %1 МГц").arg(signal.frequency / 1e6, 0, 'f', 1));
-        if (m_mainWindow) {
-            m_mainWindow->setCurrentVideoSignal(signal);
-        }
-        emit signalSwitched(signal);
-    }
-    
-signals:
-    void signalSwitched(const SignalInfo& signal);
-    
-protected:
-    void closeEvent(QCloseEvent* event) override {
-        m_updateTimer->stop();
-        QWidget::closeEvent(event);
-    }
-    
-private:
-    QWidget* createVideoItem(const SignalInfo& signal) {
-        QWidget* item = new QWidget();
-        item->setStyleSheet(QString("background-color: %1; border: 1px solid %2; border-radius: 6px; padding: 4px;")
-            .arg(COLOR_BLACK).arg(COLOR_GRAY));
-        item->setCursor(Qt::PointingHandCursor);
-        
-        QHBoxLayout* layout = new QHBoxLayout(item);
-        layout->setSpacing(4);
-        layout->setContentsMargins(4, 4, 4, 4);
-        
-        QLabel* preview = new QLabel();
-        preview->setFixedSize(70, 50);
-        preview->setStyleSheet("background-color: #000000; border-radius: 4px;");
-        if (!signal.lastFrame.isNull()) {
-            QPixmap pix = QPixmap::fromImage(signal.lastFrame).scaled(70, 50, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            preview->setPixmap(pix);
-        } else {
-            preview->setText("📹");
-            preview->setAlignment(Qt::AlignCenter);
-            QFont font = preview->font();
-            font.setPointSize(14);
-            preview->setFont(font);
-        }
-        layout->addWidget(preview);
-        
-        QVBoxLayout* infoLayout = new QVBoxLayout();
-        QLabel* freqLabel = new QLabel(QString("%1 МГц").arg(signal.frequency / 1e6, 0, 'f', 1));
-        freqLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 10px;").arg(COLOR_WHITE));
-        infoLayout->addWidget(freqLabel);
-        
-        QLabel* typeLabel = new QLabel(signal.type);
-        typeLabel->setStyleSheet(QString("color: %1; font-size: 9px;").arg(COLOR_LIGHT_GRAY));
-        infoLayout->addWidget(typeLabel);
-        
-        layout->addLayout(infoLayout);
-        
-        QPushButton* switchBtn = new QPushButton("▶");
-        switchBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; border-radius: 4px; padding: 4px 8px; font-weight: bold;")
-            .arg(COLOR_ORANGE).arg(COLOR_WHITE));
-        switchBtn->setCursor(Qt::PointingHandCursor);
-        switchBtn->setFixedSize(30, 30);
-        connect(switchBtn, &QPushButton::clicked, [this, signal]() {
-            switchToSignal(signal);
-        });
-        layout->addWidget(switchBtn);
-        
-        item->setLayout(layout);
-        return item;
-    }
-    
-    QLabel* m_videoLabel;
-    QLabel* m_infoLabel;
-    QLabel* m_recordingIndicator;
-    QWidget* m_listContainer;
-    SignalInfo m_currentSignal;
-    std::vector<SignalInfo> m_allSignals;
-    FPVHunterPro* m_mainWindow;
-    QTimer* m_updateTimer;
-};
-
-// ====================================================================
-// ПРОДОЛЖЕНИЕ В СЛЕДУЮЩЕМ СООБЩЕНИИ (ЧАСТЬ 3)
-// ====================================================================
-
-// ====================================================================
-// ЧАСТЬ 3: ГЛАВНОЕ ОКНО (FPVHunterPro)
+// КЛАСС FPVHunterPro
 // ====================================================================
 
 class FPVHunterPro : public QMainWindow {
@@ -895,7 +440,6 @@ class FPVHunterPro : public QMainWindow {
 public:
     FPVHunterPro(QWidget *parent = nullptr);
     ~FPVHunterPro();
-
     void startAutoScan();
     void addSignal(const SignalInfo& signal);
     void updateSpectrum(double freq, double power);
@@ -968,7 +512,396 @@ private:
 };
 
 // ====================================================================
-// РЕАЛИЗАЦИЯ FPVHunterPro
+// РЕАЛИЗАЦИЯ SPECTRUMWIDGET
+// ====================================================================
+
+SpectrumWidget::SpectrumWidget(QWidget* parent) : QWidget(parent) {
+    setMinimumHeight(180);
+    setStyleSheet(QString("background-color: %1; border: 1px solid %2; border-radius: 4px;")
+        .arg(COLOR_BLACK).arg(COLOR_GRAY));
+    setMouseTracking(true);
+}
+
+void SpectrumWidget::setData(const std::vector<double>& freqs, const std::vector<double>& powers) {
+    m_freqs = freqs;
+    m_powers = powers;
+    update();
+}
+
+void SpectrumWidget::addMarker(const SpectrumMarker& marker) {
+    m_markers.push_back(marker);
+    update();
+}
+
+void SpectrumWidget::clearMarkers() {
+    m_markers.clear();
+    update();
+}
+
+void SpectrumWidget::setIndicator(double freq, double power) {
+    m_indicatorFreq = freq;
+    m_indicatorPower = power;
+    update();
+}
+
+void SpectrumWidget::paintEvent(QPaintEvent* event) {
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    int w = width();
+    int h = height();
+    painter.fillRect(0, 0, w, h, QColor(COLOR_BLACK));
+    painter.setPen(QColor(COLOR_GRAY));
+    for (int i = 0; i < 10; ++i) { int x = i * w / 10; painter.drawLine(x, 0, x, h); }
+    for (int i = 0; i < 5; ++i) { int y = i * h / 5; painter.drawLine(0, y, w, y); }
+    if (!m_freqs.empty() && !m_powers.empty()) {
+        QPen pen; pen.setColor(QColor(COLOR_ORANGE)); pen.setWidth(2); painter.setPen(pen);
+        for (size_t i = 1; i < m_freqs.size(); ++i) {
+            int x1 = mapFreqToX(m_freqs[i-1], w);
+            int y1 = mapPowerToY(m_powers[i-1], h);
+            int x2 = mapFreqToX(m_freqs[i], w);
+            int y2 = mapPowerToY(m_powers[i], h);
+            painter.drawLine(x1, y1, x2, y2);
+        }
+    }
+    for (const auto& marker : m_markers) {
+        int x = mapFreqToX(marker.frequency / 1e6, w);
+        int y = mapPowerToY(marker.power, h);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(marker.color);
+        painter.drawRect(x - 2, y - 20, 4, 20);
+        QColor flagColor = marker.color;
+        flagColor.setAlpha(200);
+        painter.setBrush(flagColor);
+        painter.drawRoundedRect(x + 2, y - 20, 65, 16, 4, 4);
+        painter.setPen(Qt::white);
+        QFont font = painter.font();
+        font.setPointSize(7);
+        painter.setFont(font);
+        QString label = marker.type;
+        if (label.length() > 8) label = label.left(8) + "...";
+        painter.drawText(x + 6, y - 8, label);
+        painter.setPen(QColor(COLOR_WHITE));
+        font.setPointSize(6);
+        painter.setFont(font);
+        painter.drawText(x - 15, y + 18, QString::number(marker.frequency / 1e6, 'f', 1) + " МГц");
+    }
+    if (m_indicatorFreq > 0) {
+        int x = mapFreqToX(m_indicatorFreq / 1e6, w);
+        painter.setPen(QPen(QColor(COLOR_GREEN), 2, Qt::DashLine));
+        painter.drawLine(x, 0, x, h);
+    }
+    painter.setPen(QColor(COLOR_LIGHT_GRAY));
+    QFont font = painter.font();
+    font.setPointSize(7);
+    painter.setFont(font);
+    painter.drawText(0, h - 2, "100");
+    painter.drawText(w/4 - 10, h - 2, "1500");
+    painter.drawText(w/2 - 10, h - 2, "3000");
+    painter.drawText(3*w/4 - 10, h - 2, "4500");
+    painter.drawText(w - 20, h - 2, "6000");
+    painter.drawText(w - 30, 15, "МГц");
+    painter.drawText(2, 15, "dBFS");
+}
+
+void SpectrumWidget::mouseMoveEvent(QMouseEvent* event) {
+    double freq = mapXToFreq(event->pos().x(), width());
+    setToolTip(QString("Частота: %1 МГц").arg(freq, 0, 'f', 1));
+    QWidget::mouseMoveEvent(event);
+}
+
+int SpectrumWidget::mapFreqToX(double freq, int width) const {
+    return (freq - 100) / 5900 * width;
+}
+int SpectrumWidget::mapPowerToY(double power, int height) const {
+    return (power + 100) / 90 * height;
+}
+double SpectrumWidget::mapXToFreq(int x, int width) const {
+    return 100 + (double)x / width * 5900;
+}
+
+// ====================================================================
+// РЕАЛИЗАЦИЯ VIDEOTHUMBNAIL
+// ====================================================================
+
+VideoThumbnail::VideoThumbnail(const SignalInfo& sig, FPVHunterPro* parent) 
+    : QFrame((QWidget*)parent), m_signal(sig), m_mainWindow(parent) {
+    setFixedSize(200, 160);
+    setStyleSheet(QString("background-color: %1; border: 2px solid %2; border-radius: 8px;")
+        .arg(COLOR_DARK_GRAY).arg(COLOR_GRAY));
+    setCursor(Qt::PointingHandCursor);
+    QVBoxLayout* layout = new QVBoxLayout(this);
+    layout->setSpacing(2);
+    layout->setContentsMargins(4, 4, 4, 4);
+    m_videoLabel = new QLabel();
+    m_videoLabel->setFixedSize(180, 100);
+    m_videoLabel->setStyleSheet("background-color: #000000; border-radius: 4px;");
+    m_videoLabel->setAlignment(Qt::AlignCenter);
+    m_videoLabel->setText("📹");
+    QFont font = m_videoLabel->font();
+    font.setPointSize(24);
+    m_videoLabel->setFont(font);
+    layout->addWidget(m_videoLabel);
+    m_infoLabel = new QLabel();
+    m_infoLabel->setStyleSheet(QString("color: %1; font-size: 9px;").arg(COLOR_LIGHT_GRAY));
+    m_infoLabel->setAlignment(Qt::AlignCenter);
+    updateInfo();
+    layout->addWidget(m_infoLabel);
+    QHBoxLayout* btnLayout = new QHBoxLayout();
+    m_expandBtn = new QPushButton("↔ Развернуть");
+    m_expandBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; font-size: 8px; padding: 2px 6px; border-radius: 3px;")
+        .arg(COLOR_ORANGE).arg(COLOR_WHITE));
+    m_expandBtn->setCursor(Qt::PointingHandCursor);
+    btnLayout->addWidget(m_expandBtn);
+    m_infoBtn = new QPushButton("ℹ️");
+    m_infoBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; font-size: 8px; padding: 2px 6px; border-radius: 3px;")
+        .arg(COLOR_GRAY).arg(COLOR_WHITE));
+    m_infoBtn->setCursor(Qt::PointingHandCursor);
+    btnLayout->addWidget(m_infoBtn);
+    layout->addLayout(btnLayout);
+    setLayout(layout);
+    connect(m_expandBtn, &QPushButton::clicked, this, &VideoThumbnail::onExpand);
+    connect(m_infoBtn, &QPushButton::clicked, this, &VideoThumbnail::onInfo);
+}
+
+void VideoThumbnail::updateFrame(const QImage& frame) {
+    if (!frame.isNull()) {
+        QPixmap pix = QPixmap::fromImage(frame).scaled(180, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        m_videoLabel->setPixmap(pix);
+    }
+}
+
+void VideoThumbnail::updateInfo() {
+    QString text = QString("%1 МГц | %2\n%3 | %4 dBFS")
+        .arg(m_signal.frequency / 1e6, 0, 'f', 1)
+        .arg(m_signal.type)
+        .arg(m_signal.modulation.isEmpty() ? "FM" : m_signal.modulation)
+        .arg(m_signal.power, 0, 'f', 1);
+    m_infoLabel->setText(text);
+}
+
+void VideoThumbnail::setSignal(const SignalInfo& newSignal) {
+    m_signal = newSignal;
+    updateInfo();
+    if (m_signal.hasVideo && !m_signal.lastFrame.isNull()) {
+        updateFrame(m_signal.lastFrame);
+    }
+}
+
+void VideoThumbnail::onExpand() {
+    if (m_mainWindow) m_mainWindow->onVideoExpanded(m_signal);
+}
+
+void VideoThumbnail::onInfo() {
+    if (m_mainWindow) m_mainWindow->showSignalInfo(m_signal);
+}
+
+void VideoThumbnail::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        onExpand();
+    }
+    QFrame::mousePressEvent(event);
+}
+
+// ====================================================================
+// КЛАСС FULLSCREENVIDEOWINDOW
+// ====================================================================
+
+class FullscreenVideoWindow : public QWidget {
+    Q_OBJECT
+public:
+    FullscreenVideoWindow(const SignalInfo& initialSignal, 
+                          const std::vector<SignalInfo>& allSignals,
+                          FPVHunterPro* parent = nullptr);
+    void updateVideoFrame();
+    void updateVideo(const QImage& frame);
+    void updateInfo();
+    void switchToSignal(const SignalInfo& signal);
+signals:
+    void signalSwitched(const SignalInfo& signal);
+protected:
+    void closeEvent(QCloseEvent* event) override;
+private:
+    QWidget* createVideoItem(const SignalInfo& signal);
+    QLabel* m_videoLabel;
+    QLabel* m_infoLabel;
+    QLabel* m_recordingIndicator;
+    QWidget* m_listContainer;
+    SignalInfo m_currentSignal;
+    std::vector<SignalInfo> m_allSignals;
+    FPVHunterPro* m_mainWindow;
+    QTimer* m_updateTimer;
+};
+
+FullscreenVideoWindow::FullscreenVideoWindow(const SignalInfo& initialSignal, 
+                          const std::vector<SignalInfo>& allSignals,
+                          FPVHunterPro* parent)
+    : QWidget((QWidget*)parent), m_currentSignal(initialSignal), m_allSignals(allSignals), m_mainWindow(parent) {
+    setWindowTitle(QString("FPV Hunter - Видео на %1 МГц").arg(initialSignal.frequency / 1e6, 0, 'f', 1));
+    setMinimumSize(900, 650);
+    setStyleSheet(QString("background-color: %1;").arg(COLOR_BLACK));
+    setWindowFlags(Qt::Window);
+    QHBoxLayout* mainLayout = new QHBoxLayout(this);
+    mainLayout->setSpacing(4);
+    mainLayout->setContentsMargins(4, 4, 4, 4);
+    QWidget* videoWidget = new QWidget();
+    videoWidget->setStyleSheet(QString("background-color: #000000; border: 2px solid %1; border-radius: 8px;")
+        .arg(COLOR_ORANGE));
+    QVBoxLayout* videoLayout = new QVBoxLayout(videoWidget);
+    m_videoLabel = new QLabel();
+    m_videoLabel->setAlignment(Qt::AlignCenter);
+    m_videoLabel->setMinimumSize(640, 480);
+    m_videoLabel->setStyleSheet("color: #ffffff; font-size: 18px;");
+    m_videoLabel->setText("📹 Ожидание видео...");
+    QFont font = m_videoLabel->font();
+    font.setPointSize(36);
+    m_videoLabel->setFont(font);
+    videoLayout->addWidget(m_videoLabel);
+    QHBoxLayout* infoLayout = new QHBoxLayout();
+    m_infoLabel = new QLabel();
+    m_infoLabel->setStyleSheet(QString("color: %1; font-size: 12px; padding: 4px; background-color: %2; border-radius: 4px;")
+        .arg(COLOR_WHITE).arg(COLOR_DARK_GRAY));
+    infoLayout->addWidget(m_infoLabel);
+    m_recordingIndicator = new QLabel("⏸");
+    m_recordingIndicator->setStyleSheet(QString("color: %1; font-size: 14px; padding: 4px;")
+        .arg(COLOR_RED));
+    infoLayout->addWidget(m_recordingIndicator);
+    infoLayout->addStretch();
+    videoLayout->addLayout(infoLayout);
+    mainLayout->addWidget(videoWidget, 3);
+    QWidget* listWidget = new QWidget();
+    listWidget->setMaximumWidth(300);
+    listWidget->setStyleSheet(QString("background-color: %1; border-left: 2px solid %2;")
+        .arg(COLOR_DARK_GRAY).arg(COLOR_GRAY));
+    QVBoxLayout* listLayout = new QVBoxLayout(listWidget);
+    QLabel* titleLabel = new QLabel("📋 ДРУГИЕ ВИДЕО");
+    titleLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 14px; padding: 8px;")
+        .arg(COLOR_ORANGE));
+    listLayout->addWidget(titleLabel);
+    QScrollArea* scrollArea = new QScrollArea();
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setStyleSheet("border: none; background-color: transparent;");
+    m_listContainer = new QWidget();
+    QVBoxLayout* containerLayout = new QVBoxLayout(m_listContainer);
+    containerLayout->setSpacing(6);
+    containerLayout->setContentsMargins(4, 4, 4, 4);
+    for (const auto& s : allSignals) {
+        if (s.hasVideo && std::abs(s.frequency - initialSignal.frequency) > 0.1) {
+            QWidget* item = createVideoItem(s);
+            containerLayout->addWidget(item);
+        }
+    }
+    containerLayout->addStretch();
+    scrollArea->setWidget(m_listContainer);
+    listLayout->addWidget(scrollArea);
+    QPushButton* closeBtn = new QPushButton("✕ Закрыть");
+    closeBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; padding: 8px; border-radius: 4px; font-weight: bold;")
+        .arg(COLOR_RED).arg(COLOR_WHITE));
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    connect(closeBtn, &QPushButton::clicked, this, &FullscreenVideoWindow::close);
+    listLayout->addWidget(closeBtn);
+    mainLayout->addWidget(listWidget, 1);
+    m_updateTimer = new QTimer(this);
+    connect(m_updateTimer, &QTimer::timeout, this, &FullscreenVideoWindow::updateVideoFrame);
+    m_updateTimer->start(50);
+}
+
+void FullscreenVideoWindow::updateVideoFrame() {
+    QImage frame(640, 480, QImage::Format_RGB888);
+    frame.fill(Qt::black);
+    QPainter painter(&frame);
+    painter.setPen(Qt::white);
+    for (int i = 0; i < 640; ++i) {
+        int y = 240 + 80 * sin(i * 0.02 + QDateTime::currentMSecsSinceEpoch() / 1000.0);
+        painter.drawPoint(i, y);
+    }
+    painter.setPen(QColor(COLOR_GREEN));
+    painter.drawText(20, 40, QString("📡 %1 МГц | %2 | %3 dBFS")
+        .arg(m_currentSignal.frequency / 1e6, 0, 'f', 1)
+        .arg(m_currentSignal.type)
+        .arg(m_currentSignal.power, 0, 'f', 1));
+    painter.drawText(20, 65, QString("🔄 %1 | %2")
+        .arg(m_currentSignal.modulation.isEmpty() ? "FM" : m_currentSignal.modulation)
+        .arg(m_currentSignal.standard.isEmpty() ? "PAL" : m_currentSignal.standard));
+    updateVideo(frame);
+}
+
+void FullscreenVideoWindow::updateVideo(const QImage& frame) {
+    if (!frame.isNull()) {
+        QPixmap pix = QPixmap::fromImage(frame).scaled(m_videoLabel->width(), m_videoLabel->height(), 
+            Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        m_videoLabel->setPixmap(pix);
+    }
+}
+
+void FullscreenVideoWindow::updateInfo() {
+    m_infoLabel->setText(QString("📡 %1 МГц | %2 | %3 dBFS | %4 | %5")
+        .arg(m_currentSignal.frequency / 1e6, 0, 'f', 1)
+        .arg(m_currentSignal.type)
+        .arg(m_currentSignal.power, 0, 'f', 1)
+        .arg(m_currentSignal.modulation.isEmpty() ? "FM" : m_currentSignal.modulation)
+        .arg(m_currentSignal.standard.isEmpty() ? "PAL" : m_currentSignal.standard));
+}
+
+void FullscreenVideoWindow::switchToSignal(const SignalInfo& signal) {
+    m_currentSignal = signal;
+    updateInfo();
+    setWindowTitle(QString("FPV Hunter - Видео на %1 МГц").arg(signal.frequency / 1e6, 0, 'f', 1));
+    if (m_mainWindow) {
+        m_mainWindow->setCurrentVideoSignal(signal);
+    }
+    emit signalSwitched(signal);
+}
+
+void FullscreenVideoWindow::closeEvent(QCloseEvent* event) {
+    m_updateTimer->stop();
+    QWidget::closeEvent(event);
+}
+
+QWidget* FullscreenVideoWindow::createVideoItem(const SignalInfo& signal) {
+    QWidget* item = new QWidget();
+    item->setStyleSheet(QString("background-color: %1; border: 1px solid %2; border-radius: 6px; padding: 4px;")
+        .arg(COLOR_BLACK).arg(COLOR_GRAY));
+    item->setCursor(Qt::PointingHandCursor);
+    QHBoxLayout* layout = new QHBoxLayout(item);
+    layout->setSpacing(4);
+    layout->setContentsMargins(4, 4, 4, 4);
+    QLabel* preview = new QLabel();
+    preview->setFixedSize(70, 50);
+    preview->setStyleSheet("background-color: #000000; border-radius: 4px;");
+    if (!signal.lastFrame.isNull()) {
+        QPixmap pix = QPixmap::fromImage(signal.lastFrame).scaled(70, 50, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        preview->setPixmap(pix);
+    } else {
+        preview->setText("📹");
+        preview->setAlignment(Qt::AlignCenter);
+        QFont font = preview->font();
+        font.setPointSize(14);
+        preview->setFont(font);
+    }
+    layout->addWidget(preview);
+    QVBoxLayout* infoLayout = new QVBoxLayout();
+    QLabel* freqLabel = new QLabel(QString("%1 МГц").arg(signal.frequency / 1e6, 0, 'f', 1));
+    freqLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 10px;").arg(COLOR_WHITE));
+    infoLayout->addWidget(freqLabel);
+    QLabel* typeLabel = new QLabel(signal.type);
+    typeLabel->setStyleSheet(QString("color: %1; font-size: 9px;").arg(COLOR_LIGHT_GRAY));
+    infoLayout->addWidget(typeLabel);
+    layout->addLayout(infoLayout);
+    QPushButton* switchBtn = new QPushButton("▶");
+    switchBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; border-radius: 4px; padding: 4px 8px; font-weight: bold;")
+        .arg(COLOR_ORANGE).arg(COLOR_WHITE));
+    switchBtn->setCursor(Qt::PointingHandCursor);
+    switchBtn->setFixedSize(30, 30);
+    connect(switchBtn, &QPushButton::clicked, [this, signal]() {
+        switchToSignal(signal);
+    });
+    layout->addWidget(switchBtn);
+    item->setLayout(layout);
+    return item;
+}
+
+// ====================================================================
+// РЕАЛИЗАЦИЯ FPVHunterPro (основная)
 // ====================================================================
 
 FPVHunterPro::FPVHunterPro(QWidget *parent) : QMainWindow(parent) {
@@ -979,11 +912,9 @@ FPVHunterPro::FPVHunterPro(QWidget *parent) : QMainWindow(parent) {
     m_pluto = new PlutoAdvanced();
     m_voice = new VoiceManager();
     
-    // Загрузка настроек
     m_recordingSettings.savePath = QDir::homePath() + "/Documents/FPV_Captures";
     loadSettings();
     
-    // Подключение Pluto
     reconnectPluto();
     
     if (!m_pluto->isConnected()) {
@@ -1007,7 +938,6 @@ FPVHunterPro::FPVHunterPro(QWidget *parent) : QMainWindow(parent) {
     connect(m_plutoStatusTimer, &QTimer::timeout, this, &FPVHunterPro::updatePlutoStatus);
     m_plutoStatusTimer->start(3000);
     
-    // Голосовое приветствие
     if (m_voiceSettings.enabled) {
         m_voice->say("FPV Hunter Pro запущен. Сканирование начато.");
     }
@@ -1022,7 +952,6 @@ FPVHunterPro::~FPVHunterPro() {
 void FPVHunterPro::reconnectPluto() {
     m_pluto->disconnect();
     QString ip = "192.168.2.1";
-    
     if (m_pluto->connect(ip)) {
         statusBar()->showMessage("✅ Pluto+ подключен");
         updatePlutoStatus();
@@ -1071,7 +1000,6 @@ void FPVHunterPro::scanLoop() {
     double step = m_scanSettings.step;
     double bw = m_scanSettings.bandwidth;
     int counter = 0;
-    
     while (true) {
         if (!m_isScanning) { QThread::msleep(100); continue; }
         for (double freq = start; freq < stop && m_isScanning; freq += step) {
@@ -1086,16 +1014,12 @@ void FPVHunterPro::scanLoop() {
                     for (const auto& s : samples) power += std::norm(s);
                     power = 10 * log10(power / samples.size() + 1e-12);
                     double rssi = m_pluto->getRSSI();
-                    
                     QMetaObject::invokeMethod(this, "updateSpectrum", 
                         Q_ARG(double, freq + bw/2), Q_ARG(double, power));
-                    
-                    // Определение модуляции и стандарта
                     QString modulation = detectModulation(samples);
                     QString standard = detectVideoStandard(samples);
                     double bw_est = estimateBandwidth(samples);
                     QString type = detectType(freq + bw/2, bw_est, modulation);
-                    
                     if (power > -50 || rssi > -50) {
                         SignalInfo signal;
                         signal.frequency = freq + bw/2;
@@ -1110,15 +1034,12 @@ void FPVHunterPro::scanLoop() {
                         signal.lastSeen = QDateTime::currentDateTime();
                         signal.count = 1;
                         signal.lastFrame = generateDemoFrame(freq + bw/2);
-                        
                         QMetaObject::invokeMethod(this, "addSignal", 
                             Q_ARG(SignalInfo, signal));
                     }
                 }
             }
             QThread::msleep(5);
-            
-            // Обновление статуса каждые 100 шагов
             if (counter++ % 100 == 0) {
                 QMetaObject::invokeMethod(this, "updateStatus", 
                     Q_ARG(QString, QString("🔍 %1 МГц").arg(freq / 1e6, 0, 'f', 0)));
@@ -1153,8 +1074,6 @@ double FPVHunterPro::estimateBandwidth(const std::vector<std::complex<float>>& s
 
 QString FPVHunterPro::detectModulation(const std::vector<std::complex<float>>& samples) {
     if (samples.empty()) return "FM";
-    
-    // Анализ амплитуды
     double mean_amp = 0;
     double var_amp = 0;
     for (const auto& s : samples) {
@@ -1167,63 +1086,38 @@ QString FPVHunterPro::detectModulation(const std::vector<std::complex<float>>& s
         var_amp += (amp - mean_amp) * (amp - mean_amp);
     }
     var_amp /= samples.size();
-    double cv = std::sqrt(var_amp) / (mean_amp + 1e-12); // Коэффициент вариации
-    
-    // Анализ полосы
+    double cv = std::sqrt(var_amp) / (mean_amp + 1e-12);
     double bw = estimateBandwidth(samples);
-    
-    // FM: почти постоянная амплитуда (cv < 0.2) и широкая полоса
     if (cv < 0.2 && bw > 50e3) return "FM";
-    // AM: переменная амплитуда (cv > 0.3) и узкая полоса
     if (cv > 0.3 && bw < 20e3) return "AM";
-    
-    return "FM"; // По умолчанию
+    return "FM";
 }
 
 QString FPVHunterPro::detectVideoStandard(const std::vector<std::complex<float>>& samples) {
     if (samples.empty()) return "PAL";
-    
-    // Анализ спектра для поиска цветовой поднесущей
     int n = samples.size();
     std::vector<double> power(n);
-    for (int i = 0; i < n; ++i) {
-        power[i] = std::norm(samples[i]);
-    }
-    
+    for (int i = 0; i < n; ++i) power[i] = std::norm(samples[i]);
     double sample_rate = m_scanSettings.bandwidth;
     double max_power = 0;
     int max_idx = 0;
     for (int i = n/4; i < n/2; ++i) {
-        if (power[i] > max_power) {
-            max_power = power[i];
-            max_idx = i;
-        }
+        if (power[i] > max_power) { max_power = power[i]; max_idx = i; }
     }
     double peak_freq = (double)max_idx / n * sample_rate;
-    
-    // PAL: поднесущая ~4.43 МГц
     if (peak_freq > 4.0e6 && peak_freq < 4.8e6) return "PAL";
-    // NTSC: поднесущая ~3.58 МГц
     if (peak_freq > 3.3e6 && peak_freq < 3.9e6) return "NTSC";
-    
-    return "PAL"; // По умолчанию
+    return "PAL";
 }
 
 QString FPVHunterPro::detectType(double freq, double bandwidth, const QString& modulation) {
-    // Видео от 900 до 6000 МГц
     if (freq >= 900e6 && freq <= 6000e6 && bandwidth > 5e6) {
         return "FPV Analog";
-    }
-    // Пульты DJI (2.4 ГГц, узкая полоса)
-    else if (freq >= 2400e6 && freq <= 2483e6 && bandwidth < 5e6) {
+    } else if (freq >= 2400e6 && freq <= 2483e6 && bandwidth < 5e6) {
         return "Пульт DJI";
-    }
-    // Пульты 900 МГц
-    else if (freq >= 900e6 && freq <= 930e6 && bandwidth < 5e6) {
+    } else if (freq >= 900e6 && freq <= 930e6 && bandwidth < 5e6) {
         return "Пульт 900МГц";
-    }
-    // WiFi
-    else if (freq >= 2412e6 && freq <= 2484e6 && bandwidth > 10e6) {
+    } else if (freq >= 2412e6 && freq <= 2484e6 && bandwidth > 10e6) {
         return "WiFi";
     }
     return "Неизвестный";
@@ -1234,16 +1128,14 @@ QImage FPVHunterPro::generateDemoFrame(double freq) {
     img.fill(Qt::black);
     QPainter painter(&img);
     painter.setPen(Qt::white);
-    
-    // Генерация демо-видео
     for (int i = 0; i < 180; ++i) {
         int y = 50 + 30 * sin(i * 0.05 + freq / 1e6);
         painter.drawPoint(i, y);
     }
     painter.setPen(QColor(COLOR_GREEN));
     painter.drawText(10, 20, QString("%1 МГц").arg(freq / 1e6, 0, 'f', 1));
-    painter.drawText(10, 35, QString("%1 dBFS").arg(-30 - rand() % 20, 0, 'f', 1));
-    
+    double pwr = -30 - (rand() % 20);
+    painter.drawText(10, 35, QString("%1 dBFS").arg(pwr, 0, 'f', 1));
     return img;
 }
 
@@ -1258,12 +1150,9 @@ void FPVHunterPro::addSignal(const SignalInfo& signal) {
             break;
         }
     }
-    
     if (!found) {
         m_signals.push_back(signal);
         addHistory(signal);
-        
-        // Голосовое оповещение
         if (m_voiceSettings.enabled) {
             if (signal.hasVideo && m_voiceSettings.notifyVideo) {
                 m_voice->say(QString("Обнаружено видео на %1 мегагерц").arg(signal.frequency / 1e6, 0, 'f', 1));
@@ -1272,12 +1161,10 @@ void FPVHunterPro::addSignal(const SignalInfo& signal) {
             }
         }
     }
-    
     updateSignalList();
     updateVideoGrid();
     updateSpectrumMarkers();
     updateHistoryTable();
-    
     if (signal.hasVideo && m_recordingSettings.mode == RecordingSettings::AUTO) {
         startRecording(signal);
     }
@@ -1291,9 +1178,7 @@ void FPVHunterPro::addHistory(const SignalInfo& signal) {
     record.power = signal.power;
     record.filePath = "";
     m_history.push_back(record);
-    if (m_history.size() > 1000) {
-        m_history.erase(m_history.begin());
-    }
+    if (m_history.size() > 1000) m_history.erase(m_history.begin());
 }
 
 void FPVHunterPro::updateHistoryTable() {
@@ -1311,9 +1196,7 @@ void FPVHunterPro::updateHistoryTable() {
 
 void FPVHunterPro::updateSpectrum(double freq, double power) {
     m_spectrumData.push_back({freq, power});
-    if (m_spectrumData.size() > 1000) {
-        m_spectrumData.erase(m_spectrumData.begin());
-    }
+    if (m_spectrumData.size() > 1000) m_spectrumData.erase(m_spectrumData.begin());
     std::vector<double> freqs, powers;
     for (const auto& d : m_spectrumData) {
         freqs.push_back(d.first / 1e6);
@@ -1334,7 +1217,6 @@ void FPVHunterPro::updateUI() {
             .arg(COLOR_WHITE).arg(COLOR_RED) :
         QString("color: %1; background-color: %2; padding: 4px 8px; border-radius: 4px;")
             .arg(COLOR_WHITE).arg(COLOR_DARK_GRAY));
-    
     if (m_recordBtn) {
         m_recordBtn->setText(m_isRecording ? "⏹ СТОП ЗАПИСЬ" : "🔴 ЗАПИСЬ");
         m_recordBtn->setStyleSheet(m_isRecording ?
@@ -1354,11 +1236,8 @@ void FPVHunterPro::checkRecording() {
                 break;
             }
         }
-        if (hasActiveVideo && !m_isRecording) {
-            startRecording(getBestSignal());
-        } else if (!hasActiveVideo && m_isRecording) {
-            stopRecording();
-        }
+        if (hasActiveVideo && !m_isRecording) startRecording(getBestSignal());
+        else if (!hasActiveVideo && m_isRecording) stopRecording();
     }
 }
 
@@ -1400,7 +1279,6 @@ void FPVHunterPro::showSignalInfo(const SignalInfo& signal) {
     .arg(signal.standard.isEmpty() ? "PAL" : signal.standard)
     .arg(signal.hasVideo ? "✅ Да" : "❌ Нет")
     .arg(signal.count);
-    
     QMessageBox::information(this, "Информация о сигнале", info);
 }
 
@@ -1425,35 +1303,30 @@ void FPVHunterPro::showSettingsDialog() {
     dialog.setMinimumSize(700, 600);
     dialog.setStyleSheet(QString("background-color: %1; color: %2;").arg(COLOR_BLACK).arg(COLOR_WHITE));
     QVBoxLayout* layout = new QVBoxLayout(&dialog);
-    
     QTabWidget* tabs = new QTabWidget();
     tabs->setStyleSheet(QString("QTabBar::tab:selected { background-color: %1; color: %2; }")
         .arg(COLOR_ORANGE).arg(COLOR_BLACK));
     
-    // ===== 1. ПОДКЛЮЧЕНИЕ =====
+    // 1. Подключение
     QWidget* connectTab = new QWidget();
     QVBoxLayout* connectLayout = new QVBoxLayout(connectTab);
     QGroupBox* plutoGroup = new QGroupBox("🔌 Pluto+");
     QFormLayout* plutoForm = new QFormLayout();
-    
     QLabel* statusLabel = new QLabel(m_pluto->isConnected() ? "🟢 Подключен" : "🔴 Не подключен");
     statusLabel->setStyleSheet(m_pluto->isConnected() ? 
         QString("color: %1; font-weight: bold;").arg(COLOR_GREEN) : 
         QString("color: %1; font-weight: bold;").arg(COLOR_RED));
     plutoForm->addRow("Статус:", statusLabel);
-    
     QLineEdit* ipEdit = new QLineEdit("192.168.2.1");
     ipEdit->setStyleSheet(QString("background-color: %1; color: %2; border: 1px solid %3; padding: 4px; border-radius: 4px;")
         .arg(COLOR_DARK_GRAY).arg(COLOR_WHITE).arg(COLOR_GRAY));
     plutoForm->addRow("IP адрес:", ipEdit);
-    
     if (m_pluto->isConnected()) {
         plutoForm->addRow("Серийный номер:", new QLabel(m_pluto->getSerial()));
         plutoForm->addRow("Модель чипа:", new QLabel(m_pluto->getChipModel()));
         plutoForm->addRow("Версия прошивки:", new QLabel(m_pluto->getFirmwareVersion()));
         plutoForm->addRow("Модель железа:", new QLabel(m_pluto->getHardwareModel()));
     }
-    
     QPushButton* reconnectBtn = new QPushButton("🔄 Переподключить Pluto");
     reconnectBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; padding: 6px; border-radius: 4px;")
         .arg(COLOR_ORANGE).arg(COLOR_WHITE));
@@ -1470,18 +1343,16 @@ void FPVHunterPro::showSettingsDialog() {
         updatePlutoStatus();
     });
     plutoForm->addRow("", reconnectBtn);
-    
     plutoGroup->setLayout(plutoForm);
     connectLayout->addWidget(plutoGroup);
     connectLayout->addStretch();
     tabs->addTab(connectTab, "🔌 Подключение");
     
-    // ===== 2. СКАНИРОВАНИЕ =====
+    // 2. Сканирование
     QWidget* scanTab = new QWidget();
     QVBoxLayout* scanLayout = new QVBoxLayout(scanTab);
     QGroupBox* scanGroup = new QGroupBox("📡 Параметры сканирования");
     QGridLayout* scanGrid = new QGridLayout();
-    
     int row = 0;
     scanGrid->addWidget(new QLabel("ℹ️ Диапазон частот от 100 до 6000 МГц"), row++, 0, 1, 2);
     scanGrid->addWidget(new QLabel("От (МГц):"), row, 0);
@@ -1505,7 +1376,6 @@ void FPVHunterPro::showSettingsDialog() {
     scanGrid->addWidget(dualCheck, row++, 0, 1, 2);
     scanGroup->setLayout(scanGrid);
     scanLayout->addWidget(scanGroup);
-    
     QPushButton* applyScanBtn = new QPushButton("✅ Применить настройки сканирования");
     applyScanBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; padding: 8px; border-radius: 4px; font-weight: bold;")
         .arg(COLOR_GREEN).arg(COLOR_WHITE));
@@ -1525,12 +1395,11 @@ void FPVHunterPro::showSettingsDialog() {
     scanLayout->addStretch();
     tabs->addTab(scanTab, "📡 Сканирование");
     
-    // ===== 3. ВИДЕО =====
+    // 3. Видео
     QWidget* videoTab = new QWidget();
     QVBoxLayout* videoLayout = new QVBoxLayout(videoTab);
     QGroupBox* videoGroup = new QGroupBox("🎬 Настройки видео");
     QGridLayout* videoGrid = new QGridLayout();
-    
     row = 0;
     videoGrid->addWidget(new QLabel("ℹ️ Настройки захвата и декодирования видео"), row++, 0, 1, 2);
     videoGrid->addWidget(new QLabel("Разрешение:"), row, 0);
@@ -1557,10 +1426,9 @@ void FPVHunterPro::showSettingsDialog() {
     videoLayout->addStretch();
     tabs->addTab(videoTab, "🎬 Видео");
     
-    // ===== 4. ЗАПИСЬ =====
+    // 4. Запись
     QWidget* recordTab = new QWidget();
     QVBoxLayout* recordLayout = new QVBoxLayout(recordTab);
-    
     QGroupBox* modeGroup = new QGroupBox("💾 Режим записи");
     QVBoxLayout* modeLayout = new QVBoxLayout();
     QRadioButton* autoRadio = new QRadioButton("Автоматическая запись (при обнаружении)");
@@ -1571,7 +1439,6 @@ void FPVHunterPro::showSettingsDialog() {
     modeLayout->addWidget(manualRadio);
     modeGroup->setLayout(modeLayout);
     recordLayout->addWidget(modeGroup);
-    
     QGroupBox* autoGroup = new QGroupBox("⚙️ Параметры авто-записи");
     QGridLayout* autoLayout = new QGridLayout();
     autoLayout->addWidget(new QLabel("Порог включения (dBFS):"), 0, 0);
@@ -1582,7 +1449,6 @@ void FPVHunterPro::showSettingsDialog() {
     autoLayout->addWidget(stopSpin, 1, 1);
     autoGroup->setLayout(autoLayout);
     recordLayout->addWidget(autoGroup);
-    
     QGroupBox* saveGroup = new QGroupBox("💾 Сохранять");
     QVBoxLayout* saveLayout = new QVBoxLayout();
     QCheckBox* saveVideoCheck = new QCheckBox("Видео"); saveVideoCheck->setChecked(m_recordingSettings.saveVideo);
@@ -1593,7 +1459,6 @@ void FPVHunterPro::showSettingsDialog() {
     saveLayout->addWidget(saveReportCheck);
     saveGroup->setLayout(saveLayout);
     recordLayout->addWidget(saveGroup);
-    
     QPushButton* saveRecordBtn = new QPushButton("💾 Сохранить настройки записи");
     saveRecordBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; padding: 8px; border-radius: 4px; font-weight: bold;")
         .arg(COLOR_GREEN).arg(COLOR_WHITE));
@@ -1611,17 +1476,15 @@ void FPVHunterPro::showSettingsDialog() {
     recordLayout->addStretch();
     tabs->addTab(recordTab, "💾 Запись");
     
-    // ===== 5. ОПОВЕЩЕНИЯ =====
+    // 5. Оповещения
     QWidget* voiceTab = new QWidget();
     QVBoxLayout* voiceLayout = new QVBoxLayout(voiceTab);
     QGroupBox* voiceGroup = new QGroupBox("🔊 Голосовые и звуковые оповещения");
     QVBoxLayout* voiceGrid = new QVBoxLayout();
-    
     QCheckBox* voiceEnableCheck = new QCheckBox("Включить голосовые оповещения"); voiceEnableCheck->setChecked(m_voiceSettings.enabled);
     voiceGrid->addWidget(voiceEnableCheck);
     QCheckBox* soundEnableCheck = new QCheckBox("Включить звуковые сигналы"); soundEnableCheck->setChecked(m_voiceSettings.soundEnabled);
     voiceGrid->addWidget(soundEnableCheck);
-    
     QHBoxLayout* volumeLayout = new QHBoxLayout();
     volumeLayout->addWidget(new QLabel("Громкость:"));
     QSlider* volumeSlider = new QSlider(Qt::Horizontal); volumeSlider->setRange(0, 100); volumeSlider->setValue(m_voiceSettings.volume);
@@ -1636,23 +1499,20 @@ void FPVHunterPro::showSettingsDialog() {
     voiceGrid->addWidget(notifyControlsCheck);
     QCheckBox* notifyWiFiCheck = new QCheckBox("WiFi"); notifyWiFiCheck->setChecked(m_voiceSettings.notifyWiFi);
     voiceGrid->addWidget(notifyWiFiCheck);
-    
     voiceGroup->setLayout(voiceGrid);
     voiceLayout->addWidget(voiceGroup);
     voiceLayout->addStretch();
     tabs->addTab(voiceTab, "🔊 Оповещения");
     
-    // ===== 6. ОБЩИЕ =====
+    // 6. Общие
     QWidget* generalTab = new QWidget();
     QVBoxLayout* generalLayout = new QVBoxLayout(generalTab);
-    
     QGroupBox* folderGroup = new QGroupBox("📁 Папка сохранения");
     QHBoxLayout* folderLayout = new QHBoxLayout();
     QLineEdit* folderEdit = new QLineEdit(m_recordingSettings.savePath);
     folderEdit->setStyleSheet(QString("background-color: %1; color: %2; border: 1px solid %3; padding: 4px; border-radius: 4px;")
         .arg(COLOR_DARK_GRAY).arg(COLOR_WHITE).arg(COLOR_GRAY));
     folderLayout->addWidget(folderEdit);
-    
     QPushButton* browseBtn = new QPushButton("📂 Обзор");
     browseBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; padding: 4px 12px; border-radius: 4px;")
         .arg(COLOR_ORANGE).arg(COLOR_WHITE));
@@ -1663,26 +1523,22 @@ void FPVHunterPro::showSettingsDialog() {
     folderLayout->addWidget(browseBtn);
     folderGroup->setLayout(folderLayout);
     generalLayout->addWidget(folderGroup);
-    
     generalLayout->addStretch();
     tabs->addTab(generalTab, "📂 Общие");
     
-    // ===== 7. ИСТОРИЯ =====
+    // 7. История
     QWidget* historyTab = new QWidget();
     QVBoxLayout* historyLayout = new QVBoxLayout(historyTab);
-    
     QLabel* historyTitle = new QLabel("📜 История перехватов");
     historyTitle->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 14px;").arg(COLOR_ORANGE));
     historyLayout->addWidget(historyTitle);
-    
-    QTableWidget* historyTable = new QTableWidget();
-    historyTable->setColumnCount(4);
-    historyTable->setHorizontalHeaderLabels({"Время", "Частота", "Тип", "Мощность"});
-    historyTable->horizontalHeader()->setStretchLastSection(true);
-    historyTable->setStyleSheet(QString("background-color: %1; color: %2; border: 1px solid %3;")
+    m_historyTable = new QTableWidget();
+    m_historyTable->setColumnCount(4);
+    m_historyTable->setHorizontalHeaderLabels({"Время", "Частота", "Тип", "Мощность"});
+    m_historyTable->horizontalHeader()->setStretchLastSection(true);
+    m_historyTable->setStyleSheet(QString("background-color: %1; color: %2; border: 1px solid %3;")
         .arg(COLOR_BLACK).arg(COLOR_WHITE).arg(COLOR_GRAY));
-    historyLayout->addWidget(historyTable);
-    
+    historyLayout->addWidget(m_historyTable);
     QHBoxLayout* historyBtnLayout = new QHBoxLayout();
     QPushButton* clearHistoryBtn = new QPushButton("🗑 Очистить историю");
     clearHistoryBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; padding: 6px 12px; border-radius: 4px;")
@@ -1693,12 +1549,9 @@ void FPVHunterPro::showSettingsDialog() {
         .arg(COLOR_ORANGE).arg(COLOR_WHITE));
     historyBtnLayout->addWidget(exportHistoryBtn);
     historyLayout->addLayout(historyBtnLayout);
-    
     tabs->addTab(historyTab, "📜 История");
     
     layout->addWidget(tabs);
-    
-    // Кнопки OK/Отмена
     QHBoxLayout* btnLayout = new QHBoxLayout();
     btnLayout->addStretch();
     QPushButton* saveAllBtn = new QPushButton("💾 Сохранить все");
@@ -1712,7 +1565,6 @@ void FPVHunterPro::showSettingsDialog() {
     connect(cancelAllBtn, &QPushButton::clicked, &dialog, &QDialog::reject);
     btnLayout->addWidget(cancelAllBtn);
     layout->addLayout(btnLayout);
-    
     dialog.setLayout(layout);
     dialog.exec();
 }
@@ -1723,90 +1575,63 @@ void FPVHunterPro::setupUI() {
     QVBoxLayout* mainLayout = new QVBoxLayout(central);
     mainLayout->setSpacing(3);
     mainLayout->setContentsMargins(3, 3, 3, 3);
-    
-    // ===== ВЕРХНЯЯ ПАНЕЛЬ =====
     QHBoxLayout* topLayout = new QHBoxLayout();
-    
     QLabel* titleLabel = new QLabel("🎯 FPV HUNTER PRO v8.0");
     titleLabel->setStyleSheet(QString("color: %1; font-size: 20px; font-weight: bold;").arg(COLOR_ORANGE));
     topLayout->addWidget(titleLabel);
     topLayout->addStretch();
-    
     m_plutoStatusLabel = new QLabel();
     updatePlutoStatus();
     topLayout->addWidget(m_plutoStatusLabel);
-    
     m_recordingStatusLabel = new QLabel("⏸ Запись не активна");
     m_recordingStatusLabel->setStyleSheet(QString("color: %1; background-color: %2; padding: 4px 8px; border-radius: 4px;")
         .arg(COLOR_WHITE).arg(COLOR_DARK_GRAY));
     topLayout->addWidget(m_recordingStatusLabel);
-    
     QPushButton* settingsBtn = new QPushButton("⚙️ Настройки");
     settingsBtn->setStyleSheet(QString("background-color: %1; color: %2; border: 1px solid %3; border-radius: 4px; padding: 4px 10px;")
         .arg(COLOR_DARK_GRAY).arg(COLOR_WHITE).arg(COLOR_GRAY));
     connect(settingsBtn, &QPushButton::clicked, this, &FPVHunterPro::showSettingsDialog);
     topLayout->addWidget(settingsBtn);
-    
     mainLayout->addLayout(topLayout);
-    
-    // ===== ОСНОВНОЙ КОНТЕНТ =====
     QHBoxLayout* contentLayout = new QHBoxLayout();
-    
-    // Левая панель: список сигналов
     QWidget* leftPanel = new QWidget();
     leftPanel->setMaximumWidth(280);
     leftPanel->setStyleSheet(QString("background-color: %1; border: 1px solid %2; border-radius: 6px;")
         .arg(COLOR_DARK_GRAY).arg(COLOR_GRAY));
     QVBoxLayout* leftLayout = new QVBoxLayout(leftPanel);
-    
     QLabel* signalTitle = new QLabel("📡 ВСЕ СИГНАЛЫ");
     signalTitle->setStyleSheet(QString("color: %1; font-weight: bold; padding: 4px;").arg(COLOR_ORANGE));
     leftLayout->addWidget(signalTitle);
-    
     m_signalList = new QListWidget();
     m_signalList->setStyleSheet(QString("background-color: %1; border: none;").arg(COLOR_BLACK));
     m_signalList->setMinimumHeight(200);
     leftLayout->addWidget(m_signalList);
-    
     m_signalCountLabel = new QLabel("📡 Сигналов: 0");
     m_signalCountLabel->setStyleSheet(QString("color: %1; padding: 4px;").arg(COLOR_LIGHT_GRAY));
     leftLayout->addWidget(m_signalCountLabel);
-    
     contentLayout->addWidget(leftPanel);
-    
-    // Центральная панель: видео-сетка
     QWidget* centerPanel = new QWidget();
     centerPanel->setStyleSheet(QString("background-color: %1; border: 1px solid %2; border-radius: 6px;")
         .arg(COLOR_DARK_GRAY).arg(COLOR_GRAY));
     QVBoxLayout* centerLayout = new QVBoxLayout(centerPanel);
-    
     QLabel* videoTitle = new QLabel("📹 ВИДЕО СИГНАЛЫ");
     videoTitle->setStyleSheet(QString("color: %1; font-weight: bold; padding: 4px;").arg(COLOR_ORANGE));
     centerLayout->addWidget(videoTitle);
-    
     QScrollArea* scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
     scrollArea->setStyleSheet("border: none; background-color: transparent;");
-    
     QWidget* gridContainer = new QWidget();
     m_videoGrid = new QGridLayout(gridContainer);
     m_videoGrid->setSpacing(6);
     m_videoGrid->setAlignment(Qt::AlignTop | Qt::AlignLeft);
     scrollArea->setWidget(gridContainer);
     centerLayout->addWidget(scrollArea);
-    
     contentLayout->addWidget(centerPanel, 3);
     mainLayout->addLayout(contentLayout);
-    
-    // ===== НИЖНЯЯ ПАНЕЛЬ: СПЕКТРОГРАММА =====
     QVBoxLayout* bottomLayout = new QVBoxLayout();
     bottomLayout->setSpacing(3);
-    
-    // Спектрограмма
     m_spectrumWidget = new SpectrumWidget();
     bottomLayout->addWidget(m_spectrumWidget);
-    
-    // Индикатор
     QHBoxLayout* indicatorLayout = new QHBoxLayout();
     m_indicatorLabel = new QLabel("📊 Ожидание сигнала...");
     m_indicatorLabel->setStyleSheet(QString("color: %1; background-color: %2; padding: 4px 8px; border-radius: 4px;")
@@ -1814,7 +1639,6 @@ void FPVHunterPro::setupUI() {
     indicatorLayout->addWidget(m_indicatorLabel);
     indicatorLayout->addStretch();
     bottomLayout->addLayout(indicatorLayout);
-    
     mainLayout->addLayout(bottomLayout);
 }
 
@@ -1822,35 +1646,20 @@ void FPVHunterPro::updateSignalList() {
     m_signalList->clear();
     std::sort(m_signals.begin(), m_signals.end(), 
         [](const SignalInfo& a, const SignalInfo& b) { return a.frequency < b.frequency; });
-    
     for (const auto& s : m_signals) {
         QString icon;
         QColor color;
-        if (s.hasVideo) {
-            icon = "🟢";
-            color = QColor(COLOR_GREEN);
-        } else if (s.type.contains("Пульт")) {
-            icon = "🟡";
-            color = QColor(COLOR_ORANGE);
-        } else {
-            icon = "⚪";
-            color = QColor(COLOR_WHITE);
-        }
-        
+        if (s.hasVideo) { icon = "🟢"; color = QColor(COLOR_GREEN); }
+        else if (s.type.contains("Пульт")) { icon = "🟡"; color = QColor(COLOR_ORANGE); }
+        else { icon = "⚪"; color = QColor(COLOR_WHITE); }
         QString text = QString("%1 %2 МГц | %3 | %4 dBFS")
             .arg(icon)
             .arg(s.frequency / 1e6, 0, 'f', 1)
             .arg(s.type)
             .arg(s.power, 0, 'f', 1);
-        
-        if (s.hasVideo) {
-            text += " 📹";
-        }
-        
+        if (s.hasVideo) text += " 📹";
         QListWidgetItem* item = new QListWidgetItem(text);
         item->setForeground(color);
-        
-        // Дополнительная информация в подсказке
         item->setToolTip(QString("Частота: %1 МГц\nТип: %2\nМощность: %3 dBFS\nМодуляция: %4\nСтандарт: %5\nОбнаружений: %6")
             .arg(s.frequency / 1e6, 0, 'f', 2)
             .arg(s.type)
@@ -1858,35 +1667,28 @@ void FPVHunterPro::updateSignalList() {
             .arg(s.modulation.isEmpty() ? "FM" : s.modulation)
             .arg(s.standard.isEmpty() ? "PAL" : s.standard)
             .arg(s.count));
-        
         m_signalList->addItem(item);
     }
-    
     m_signalCountLabel->setText(QString("📡 Сигналов: %1").arg(m_signals.size()));
 }
 
 void FPVHunterPro::updateVideoGrid() {
-    // Очистка сетки
     QLayoutItem* child;
     while ((child = m_videoGrid->takeAt(0)) != nullptr) {
-        if (child->widget()) {
-            child->widget()->deleteLater();
-        }
+        if (child->widget()) { child->widget()->deleteLater(); }
         delete child;
     }
-    
     int count = 0;
     for (const auto& s : m_signals) {
         if (s.hasVideo && count < 12) {
             VideoThumbnail* thumb = new VideoThumbnail(s, this);
             thumb->setSignal(s);
             connect(thumb->getExpandBtn(), &QPushButton::clicked, [this, s]() { onVideoExpanded(s); });
-            connect(thumb, &VideoThumbnail::clicked, [this, s]() { onVideoClicked(s); });
+            connect(thumb->getInfoBtn(), &QPushButton::clicked, [this, s]() { showSignalInfo(s); });
             m_videoGrid->addWidget(thumb);
             count++;
         }
     }
-    
     if (count == 0) {
         QLabel* placeholder = new QLabel("📹 Ожидание видео сигналов...");
         placeholder->setStyleSheet(QString("color: %1; font-size: 14px; padding: 20px;").arg(COLOR_LIGHT_GRAY));
@@ -1903,13 +1705,9 @@ void FPVHunterPro::updateSpectrumMarkers() {
         marker.power = s.power;
         marker.isActive = s.isActive;
         marker.type = s.type;
-        if (s.hasVideo) {
-            marker.color = QColor(COLOR_GREEN);
-        } else if (s.type.contains("Пульт")) {
-            marker.color = QColor(COLOR_ORANGE);
-        } else {
-            marker.color = QColor(COLOR_WHITE);
-        }
+        if (s.hasVideo) marker.color = QColor(COLOR_GREEN);
+        else if (s.type.contains("Пульт")) marker.color = QColor(COLOR_ORANGE);
+        else marker.color = QColor(COLOR_WHITE);
         m_spectrumWidget->addMarker(marker);
     }
 }
@@ -1935,10 +1733,8 @@ void FPVHunterPro::startRecording(const SignalInfo& signal) {
         .arg((int)(signal.frequency / 1e6))
         .arg(timestamp);
     QDir().mkpath(m_recordingSettings.savePath + "/видео");
-    
     m_recordingStatusLabel->setText("🔴 ЗАПИСЬ: " + filename);
     statusBar()->showMessage("🔴 Запись начата: " + filename);
-    
     if (m_voiceSettings.enabled) {
         m_voice->say("Запись видео начата");
     }
@@ -1949,7 +1745,6 @@ void FPVHunterPro::stopRecording() {
     m_isRecording = false;
     m_recordingStatusLabel->setText("⏸ Запись остановлена");
     statusBar()->showMessage("⏹ Запись остановлена");
-    
     if (m_voiceSettings.enabled) {
         m_voice->say("Запись видео остановлена");
     }
@@ -1964,7 +1759,6 @@ void FPVHunterPro::loadSettings() {
     m_recordingSettings.saveVideo = settings.value("save_video", true).toBool();
     m_recordingSettings.saveIQ = settings.value("save_iq", true).toBool();
     m_recordingSettings.saveReports = settings.value("save_reports", true).toBool();
-    
     m_scanSettings.startFreq = settings.value("scan_start", 100).toDouble() * 1e6;
     m_scanSettings.stopFreq = settings.value("scan_stop", 6000).toDouble() * 1e6;
     m_scanSettings.step = settings.value("scan_step", 5).toDouble() * 1e6;
@@ -1972,13 +1766,11 @@ void FPVHunterPro::loadSettings() {
     m_scanSettings.gain = settings.value("scan_gain", 40).toInt();
     m_scanSettings.agcEnabled = settings.value("scan_agc", false).toBool();
     m_scanSettings.dualMode = settings.value("scan_dual", false).toBool();
-    
     m_videoSettings.resolution = settings.value("video_res", 480).toInt();
     m_videoSettings.fps = settings.value("video_fps", 25).toInt();
     m_videoSettings.bitrate = settings.value("video_bitrate", 2000).toInt();
     m_videoSettings.autoModulation = settings.value("video_auto_mod", true).toBool();
     m_videoSettings.autoStandard = settings.value("video_auto_std", true).toBool();
-    
     m_voiceSettings.enabled = settings.value("voice_enabled", true).toBool();
     m_voiceSettings.soundEnabled = settings.value("sound_enabled", true).toBool();
     m_voiceSettings.volume = settings.value("voice_volume", 80).toInt();
@@ -1996,7 +1788,6 @@ void FPVHunterPro::saveSettings() {
     settings.setValue("save_video", m_recordingSettings.saveVideo);
     settings.setValue("save_iq", m_recordingSettings.saveIQ);
     settings.setValue("save_reports", m_recordingSettings.saveReports);
-    
     settings.setValue("scan_start", (int)(m_scanSettings.startFreq / 1e6));
     settings.setValue("scan_stop", (int)(m_scanSettings.stopFreq / 1e6));
     settings.setValue("scan_step", m_scanSettings.step / 1e6);
@@ -2004,13 +1795,11 @@ void FPVHunterPro::saveSettings() {
     settings.setValue("scan_gain", m_scanSettings.gain);
     settings.setValue("scan_agc", m_scanSettings.agcEnabled);
     settings.setValue("scan_dual", m_scanSettings.dualMode);
-    
     settings.setValue("video_res", m_videoSettings.resolution);
     settings.setValue("video_fps", m_videoSettings.fps);
     settings.setValue("video_bitrate", m_videoSettings.bitrate);
     settings.setValue("video_auto_mod", m_videoSettings.autoModulation);
     settings.setValue("video_auto_std", m_videoSettings.autoStandard);
-    
     settings.setValue("voice_enabled", m_voiceSettings.enabled);
     settings.setValue("sound_enabled", m_voiceSettings.soundEnabled);
     settings.setValue("voice_volume", m_voiceSettings.volume);
@@ -2051,18 +1840,6 @@ QString FPVHunterPro::getStyle() {
 }
 
 // ====================================================================
-// РЕАЛИЗАЦИЯ МЕТОДОВ VideoThumbnail
-// ====================================================================
-
-void VideoThumbnail::onExpand() {
-    if (m_mainWindow) m_mainWindow->onVideoExpanded(m_signal);
-}
-
-void VideoThumbnail::onInfo() {
-    if (m_mainWindow) m_mainWindow->showSignalInfo(m_signal);
-}
-
-// ====================================================================
 // ЗАПУСК
 // ====================================================================
 
@@ -2071,10 +1848,8 @@ int main(int argc, char *argv[]) {
     app.setStyle(QStyleFactory::create("Fusion"));
     app.setApplicationName("FPV Hunter Pro");
     app.setOrganizationName("FPVHunter");
-    
     FPVHunterPro window;
     window.show();
-    
     return app.exec();
 }
 
