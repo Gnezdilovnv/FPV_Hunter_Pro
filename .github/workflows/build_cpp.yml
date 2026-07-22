@@ -1,0 +1,72 @@
+name: Build Windows EXE with all dependencies
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        install: mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-qt5 mingw-w64-x86_64-libiio mingw-w64-x86_64-make base-devel
+    - name: Configure
+      shell: msys2 {0}
+      run: |
+        mkdir build && cd build
+        cmake .. -G "Unix Makefiles" -DCMAKE_PREFIX_PATH=/mingw64 -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
+    - name: Build
+      shell: msys2 {0}
+      run: |
+        cd build
+        make -j4
+    - name: Copy ALL dependencies
+      shell: msys2 {0}
+      run: |
+        mkdir -p dist/platforms
+        mkdir -p dist/imageformats
+        mkdir -p dist/iconengines
+        mkdir -p dist/styles
+        
+        cp build/FPV_Hunter_Pro.exe dist/
+        
+        # Qt5
+        cp /mingw64/bin/Qt5Core.dll dist/ || true
+        cp /mingw64/bin/Qt5Widgets.dll dist/ || true
+        cp /mingw64/bin/Qt5Gui.dll dist/ || true
+        cp /mingw64/bin/Qt5Network.dll dist/ || true
+        cp /mingw64/bin/Qt5Xml.dll dist/ || true
+        cp /mingw64/bin/Qt5Svg.dll dist/ || true
+        
+        # MinGW
+        cp /mingw64/bin/libgcc_s_seh-1.dll dist/ || true
+        cp /mingw64/bin/libstdc++-6.dll dist/ || true
+        cp /mingw64/bin/libwinpthread-1.dll dist/ || true
+        
+        # libiio
+        cp /mingw64/bin/libiio.dll dist/ || true
+        cp /mingw64/bin/libxml2-*.dll dist/ || true
+        cp /mingw64/bin/liblzma-*.dll dist/ || true
+        cp /mingw64/bin/libzstd-*.dll dist/ || true
+        cp /mingw64/bin/libbrotli*.dll dist/ || true
+        
+        # UCRT (Windows 7)
+        cp /c/Windows/System32/api-ms-win-crt-*.dll dist/ || true
+        cp /c/Windows/System32/ucrtbase.dll dist/ || true
+        cp /c/Windows/System32/vcruntime140.dll dist/ || true
+        cp /c/Windows/System32/msvcp140.dll dist/ || true
+        
+        # Qt5 плагины
+        cp /mingw64/share/qt5/plugins/platforms/qwindows.dll dist/platforms/ || true
+        cp /mingw64/share/qt5/plugins/imageformats/*.dll dist/imageformats/ || true
+        cp /mingw64/share/qt5/plugins/iconengines/*.dll dist/iconengines/ || true
+        cp /mingw64/share/qt5/plugins/styles/*.dll dist/styles/ || true
+        
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: FPV_Hunter_Pro_v8_Complete
+        path: dist/*

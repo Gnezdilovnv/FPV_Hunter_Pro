@@ -55,6 +55,8 @@
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QDebug>
+#include <QMutex>
+#include <QMutexLocker>
 
 #include <cmath>
 #include <vector>
@@ -173,28 +175,21 @@ class FullscreenVideoWindow;
 class SpectrumWidget;
 class FPVHunterPro;
 
-// ====================================================================
-// КЛАСС ГОЛОСОВЫХ ОПОВЕЩЕНИЙ
-// ====================================================================
-
 class VoiceManager {
 public:
     VoiceManager() : m_enabled(true) {}
-    
     void say(const QString& text) {
         if (!m_enabled) return;
         qDebug() << "[VOICE]" << text;
     }
-    
     void setEnabled(bool enabled) { m_enabled = enabled; }
     bool isEnabled() const { return m_enabled; }
-    
 private:
     bool m_enabled;
 };
 
 // ====================================================================
-// КЛАСС PLUTO (все методы public)
+// КЛАСС PLUTO (все методы public + исправления)
 // ====================================================================
 
 class PlutoAdvanced {
@@ -245,8 +240,14 @@ public:
     }
     
     void disconnect() {
-        if (buffer) { iio_buffer_destroy(buffer); buffer = nullptr; }
-        if (ctx) { iio_context_destroy(ctx); ctx = nullptr; }
+        if (buffer) { 
+            iio_buffer_destroy(buffer); 
+            buffer = nullptr; 
+        }
+        if (ctx) { 
+            iio_context_destroy(ctx); 
+            ctx = nullptr; 
+        }
         connected = false;
     }
     
@@ -270,6 +271,7 @@ public:
     
     bool setSampleRate(double rate) {
         if (!connected || !phy) return false;
+        if (rate <= 0) return false;
         sample_rate = rate;
         int ret = iio_device_attr_write_double(phy, "RX_SAMPLING_FREQ", rate);
         if (ret >= 0) setBandwidth(rate);
@@ -297,6 +299,7 @@ public:
     
     bool setBandwidth(double bw) {
         if (!connected || !rx) return false;
+        if (bw <= 0) return false;
         return iio_device_attr_write_double(rx, "RX_RF_BANDWIDTH", bw) >= 0;
     }
     
@@ -310,14 +313,26 @@ public:
     std::vector<std::complex<float>> receiveSamples(size_t count = 4096) {
         std::vector<std::complex<float>> result;
         if (!connected || !rx_channel) return result;
-        if (buffer) { iio_buffer_destroy(buffer); buffer = nullptr; }
+        if (buffer) { 
+            iio_buffer_destroy(buffer); 
+            buffer = nullptr; 
+        }
         buffer = iio_device_create_buffer(rx, count, false);
         if (!buffer) return result;
         ssize_t bytes = iio_buffer_refill(buffer);
-        if (bytes < 0) return result;
+        if (bytes < 0) {
+            iio_buffer_destroy(buffer);
+            buffer = nullptr;
+            return result;
+        }
         size_t sample_count = bytes / sizeof(int16_t) / 2;
         result.reserve(sample_count);
         int16_t *data = (int16_t*)iio_buffer_first(buffer, rx_channel);
+        if (!data) {
+            iio_buffer_destroy(buffer);
+            buffer = nullptr;
+            return result;
+        }
         for (size_t i = 0; i < sample_count; ++i) {
             float i_val = data[i*2] / 2048.0f;
             float q_val = data[i*2+1] / 2048.0f;
@@ -385,7 +400,7 @@ private:
 };
 
 // ====================================================================
-// КЛАССЫ ВИДЖЕТОВ (объявлены ниже, но реализованы после FPVHunterPro)
+// КЛАССЫ ВИДЖЕТОВ
 // ====================================================================
 
 class SpectrumWidget : public QWidget {
@@ -408,112 +423,6 @@ private:
     double m_indicatorFreq = 0;
     double m_indicatorPower = 0;
 };
-
-class VideoThumbnail : public QFrame {
-    Q_OBJECT
-public:
-    VideoThumbnail(const SignalInfo& sig, FPVHunterPro* parent = nullptr);
-    void updateFrame(const QImage& frame);
-    void updateInfo();
-    void setSignal(const SignalInfo& newSignal);
-    void onExpand();
-    void onInfo();
-    void mousePressEvent(QMouseEvent* event) override;
-    QPushButton* getExpandBtn() const { return m_expandBtn; }
-    QPushButton* getInfoBtn() const { return m_infoBtn; }
-private:
-    SignalInfo m_signal;
-    QLabel* m_videoLabel;
-    QLabel* m_infoLabel;
-    QPushButton* m_expandBtn;
-    QPushButton* m_infoBtn;
-    FPVHunterPro* m_mainWindow;
-};
-
-// ====================================================================
-// КЛАСС FPVHunterPro
-// ====================================================================
-
-class FPVHunterPro : public QMainWindow {
-    Q_OBJECT
-
-public:
-    FPVHunterPro(QWidget *parent = nullptr);
-    ~FPVHunterPro();
-    void startAutoScan();
-    void addSignal(const SignalInfo& signal);
-    void updateSpectrum(double freq, double power);
-    void updateStatus(const QString& status);
-    void updateUI();
-    void checkRecording();
-    void onVideoExpanded(const SignalInfo& signal);
-    void onVideoClicked(const SignalInfo& signal);
-    void chooseSaveFolder();
-    void showSettingsDialog();
-    void reconnectPluto();
-    void setCurrentVideoSignal(const SignalInfo& signal);
-    void updatePlutoStatus();
-    void addHistory(const SignalInfo& signal);
-    void showSignalInfo(const SignalInfo& signal);
-
-private:
-    void setupUI();
-    void scanLoop();
-    QImage generateDemoFrame(double freq);
-    void updateSignalList();
-    void updateVideoGrid();
-    void updateSpectrumMarkers();
-    void updateHistoryTable();
-    SignalInfo getBestSignal();
-    void startRecording(const SignalInfo& signal);
-    void stopRecording();
-    QString detectModulation(const std::vector<std::complex<float>>& samples);
-    QString detectVideoStandard(const std::vector<std::complex<float>>& samples);
-    QString detectType(double freq, double bandwidth, const QString& modulation);
-    double estimateBandwidth(const std::vector<std::complex<float>>& samples);
-    QString getStyle();
-    void loadSettings();
-    void saveSettings();
-    void applyScanSettings();
-
-    PlutoAdvanced* m_pluto;
-    VoiceManager* m_voice;
-    QTimer* m_timer;
-    QTimer* m_recordTimer;
-    QTimer* m_plutoStatusTimer;
-    
-    bool m_isScanning = false;
-    bool m_isViewing = false;
-    bool m_isRecording = false;
-    bool m_autoRecording = false;
-    
-    QListWidget* m_signalList;
-    QGridLayout* m_videoGrid;
-    SpectrumWidget* m_spectrumWidget;
-    QLabel* m_signalCountLabel;
-    QLabel* m_recordingStatusLabel;
-    QLabel* m_plutoStatusLabel;
-    QLabel* m_indicatorLabel;
-    QTableWidget* m_historyTable;
-    QPushButton* m_recordBtn;
-    
-    std::vector<SignalInfo> m_signals;
-    SignalInfo m_currentVideoSignal;
-    std::vector<std::pair<double, double>> m_spectrumData;
-    std::vector<InterceptHistory> m_history;
-    
-    RecordingSettings m_recordingSettings;
-    ScanSettings m_scanSettings;
-    VideoSettings m_videoSettings;
-    VoiceSettings m_voiceSettings;
-
-    friend class VideoThumbnail;
-    friend class FullscreenVideoWindow;
-};
-
-// ====================================================================
-// РЕАЛИЗАЦИЯ SPECTRUMWIDGET
-// ====================================================================
 
 SpectrumWidget::SpectrumWidget(QWidget* parent) : QWidget(parent) {
     setMinimumHeight(180);
@@ -620,8 +529,29 @@ double SpectrumWidget::mapXToFreq(int x, int width) const {
 }
 
 // ====================================================================
-// РЕАЛИЗАЦИЯ VIDEOTHUMBNAIL
+// ВИДЕО-ОКНО
 // ====================================================================
+
+class VideoThumbnail : public QFrame {
+    Q_OBJECT
+public:
+    VideoThumbnail(const SignalInfo& sig, FPVHunterPro* parent = nullptr);
+    void updateFrame(const QImage& frame);
+    void updateInfo();
+    void setSignal(const SignalInfo& newSignal);
+    void onExpand();
+    void onInfo();
+    void mousePressEvent(QMouseEvent* event) override;
+    QPushButton* getExpandBtn() const { return m_expandBtn; }
+    QPushButton* getInfoBtn() const { return m_infoBtn; }
+private:
+    SignalInfo m_signal;
+    QLabel* m_videoLabel;
+    QLabel* m_infoLabel;
+    QPushButton* m_expandBtn;
+    QPushButton* m_infoBtn;
+    FPVHunterPro* m_mainWindow;
+};
 
 VideoThumbnail::VideoThumbnail(const SignalInfo& sig, FPVHunterPro* parent) 
     : QFrame((QWidget*)parent), m_signal(sig), m_mainWindow(parent) {
@@ -703,7 +633,7 @@ void VideoThumbnail::mousePressEvent(QMouseEvent* event) {
 }
 
 // ====================================================================
-// КЛАСС FULLSCREENVIDEOWINDOW
+// ПОЛНОЭКРАННОЕ ВИДЕО
 // ====================================================================
 
 class FullscreenVideoWindow : public QWidget {
@@ -901,7 +831,89 @@ QWidget* FullscreenVideoWindow::createVideoItem(const SignalInfo& signal) {
 }
 
 // ====================================================================
-// РЕАЛИЗАЦИЯ FPVHunterPro (основная)
+// ГЛАВНОЕ ОКНО FPVHunterPro
+// ====================================================================
+
+class FPVHunterPro : public QMainWindow {
+    Q_OBJECT
+
+public:
+    FPVHunterPro(QWidget *parent = nullptr);
+    ~FPVHunterPro();
+    void startAutoScan();
+    void addSignal(const SignalInfo& signal);
+    void updateSpectrum(double freq, double power);
+    void updateStatus(const QString& status);
+    void updateUI();
+    void checkRecording();
+    void onVideoExpanded(const SignalInfo& signal);
+    void onVideoClicked(const SignalInfo& signal);
+    void chooseSaveFolder();
+    void showSettingsDialog();
+    void reconnectPluto();
+    void setCurrentVideoSignal(const SignalInfo& signal);
+    void updatePlutoStatus();
+    void addHistory(const SignalInfo& signal);
+    void showSignalInfo(const SignalInfo& signal);
+
+private:
+    void setupUI();
+    void scanLoop();
+    QImage generateDemoFrame(double freq);
+    void updateSignalList();
+    void updateVideoGrid();
+    void updateSpectrumMarkers();
+    void updateHistoryTable();
+    SignalInfo getBestSignal();
+    void startRecording(const SignalInfo& signal);
+    void stopRecording();
+    QString detectModulation(const std::vector<std::complex<float>>& samples);
+    QString detectVideoStandard(const std::vector<std::complex<float>>& samples);
+    QString detectType(double freq, double bandwidth, const QString& modulation);
+    double estimateBandwidth(const std::vector<std::complex<float>>& samples);
+    QString getStyle();
+    void loadSettings();
+    void saveSettings();
+    void applyScanSettings();
+
+    PlutoAdvanced* m_pluto;
+    VoiceManager* m_voice;
+    QTimer* m_timer;
+    QTimer* m_recordTimer;
+    QTimer* m_plutoStatusTimer;
+    QMutex m_mutex;
+    
+    bool m_isScanning = false;
+    bool m_isViewing = false;
+    bool m_isRecording = false;
+    bool m_autoRecording = false;
+    
+    QListWidget* m_signalList;
+    QGridLayout* m_videoGrid;
+    SpectrumWidget* m_spectrumWidget;
+    QLabel* m_signalCountLabel;
+    QLabel* m_recordingStatusLabel;
+    QLabel* m_plutoStatusLabel;
+    QLabel* m_indicatorLabel;
+    QTableWidget* m_historyTable;
+    QPushButton* m_recordBtn;
+    
+    std::vector<SignalInfo> m_signals;
+    SignalInfo m_currentVideoSignal;
+    std::vector<std::pair<double, double>> m_spectrumData;
+    std::vector<InterceptHistory> m_history;
+    
+    RecordingSettings m_recordingSettings;
+    ScanSettings m_scanSettings;
+    VideoSettings m_videoSettings;
+    VoiceSettings m_voiceSettings;
+
+    friend class VideoThumbnail;
+    friend class FullscreenVideoWindow;
+};
+
+// ====================================================================
+// РЕАЛИЗАЦИЯ FPVHunterPro
 // ====================================================================
 
 FPVHunterPro::FPVHunterPro(QWidget *parent) : QMainWindow(parent) {
@@ -937,6 +949,8 @@ FPVHunterPro::FPVHunterPro(QWidget *parent) : QMainWindow(parent) {
     m_plutoStatusTimer = new QTimer(this);
     connect(m_plutoStatusTimer, &QTimer::timeout, this, &FPVHunterPro::updatePlutoStatus);
     m_plutoStatusTimer->start(3000);
+    
+    srand(time(nullptr));
     
     if (m_voiceSettings.enabled) {
         m_voice->say("FPV Hunter Pro запущен. Сканирование начато.");
@@ -1000,8 +1014,7 @@ void FPVHunterPro::scanLoop() {
     double step = m_scanSettings.step;
     double bw = m_scanSettings.bandwidth;
     int counter = 0;
-    while (true) {
-        if (!m_isScanning) { QThread::msleep(100); continue; }
+    while (m_isScanning) {
         for (double freq = start; freq < stop && m_isScanning; freq += step) {
             if (m_pluto->isConnected()) {
                 m_pluto->setFrequency(freq + bw/2);
@@ -1052,6 +1065,7 @@ void FPVHunterPro::scanLoop() {
 double FPVHunterPro::estimateBandwidth(const std::vector<std::complex<float>>& samples) {
     if (samples.empty()) return 0;
     int n = samples.size();
+    if (n == 0) return 0;
     std::vector<double> power(n);
     double max_power = 0;
     for (int i = 0; i < n; ++i) {
@@ -1096,12 +1110,13 @@ QString FPVHunterPro::detectModulation(const std::vector<std::complex<float>>& s
 QString FPVHunterPro::detectVideoStandard(const std::vector<std::complex<float>>& samples) {
     if (samples.empty()) return "PAL";
     int n = samples.size();
+    if (n == 0) return "PAL";
     std::vector<double> power(n);
     for (int i = 0; i < n; ++i) power[i] = std::norm(samples[i]);
     double sample_rate = m_scanSettings.bandwidth;
     double max_power = 0;
     int max_idx = 0;
-    for (int i = n/4; i < n/2; ++i) {
+    for (int i = n/4; i < n/2 && i < n; ++i) {
         if (power[i] > max_power) { max_power = power[i]; max_idx = i; }
     }
     double peak_freq = (double)max_idx / n * sample_rate;
@@ -1111,6 +1126,7 @@ QString FPVHunterPro::detectVideoStandard(const std::vector<std::complex<float>>
 }
 
 QString FPVHunterPro::detectType(double freq, double bandwidth, const QString& modulation) {
+    Q_UNUSED(modulation);
     if (freq >= 900e6 && freq <= 6000e6 && bandwidth > 5e6) {
         return "FPV Analog";
     } else if (freq >= 2400e6 && freq <= 2483e6 && bandwidth < 5e6) {
@@ -1140,6 +1156,7 @@ QImage FPVHunterPro::generateDemoFrame(double freq) {
 }
 
 void FPVHunterPro::addSignal(const SignalInfo& signal) {
+    QMutexLocker locker(&m_mutex);
     bool found = false;
     for (auto& existing : m_signals) {
         if (std::abs(existing.frequency - signal.frequency) < 0.1e6) {
@@ -1228,6 +1245,7 @@ void FPVHunterPro::updateUI() {
 }
 
 void FPVHunterPro::checkRecording() {
+    QMutexLocker locker(&m_mutex);
     if (m_recordingSettings.mode == RecordingSettings::AUTO) {
         bool hasActiveVideo = false;
         for (const auto& s : m_signals) {
@@ -1643,6 +1661,7 @@ void FPVHunterPro::setupUI() {
 }
 
 void FPVHunterPro::updateSignalList() {
+    QMutexLocker locker(&m_mutex);
     m_signalList->clear();
     std::sort(m_signals.begin(), m_signals.end(), 
         [](const SignalInfo& a, const SignalInfo& b) { return a.frequency < b.frequency; });
@@ -1713,6 +1732,7 @@ void FPVHunterPro::updateSpectrumMarkers() {
 }
 
 SignalInfo FPVHunterPro::getBestSignal() {
+    QMutexLocker locker(&m_mutex);
     SignalInfo best;
     double maxPower = -100;
     for (const auto& s : m_signals) {
@@ -1726,13 +1746,17 @@ SignalInfo FPVHunterPro::getBestSignal() {
 
 void FPVHunterPro::startRecording(const SignalInfo& signal) {
     if (m_isRecording) return;
+    QDir dir(m_recordingSettings.savePath + "/видео");
+    if (!dir.exists() && !dir.mkpath(".")) {
+        statusBar()->showMessage("❌ Ошибка создания папки для записи");
+        return;
+    }
     m_isRecording = true;
     QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
     QString filename = QString("%1/видео/video_%2_%3.avi")
         .arg(m_recordingSettings.savePath)
         .arg((int)(signal.frequency / 1e6))
         .arg(timestamp);
-    QDir().mkpath(m_recordingSettings.savePath + "/видео");
     m_recordingStatusLabel->setText("🔴 ЗАПИСЬ: " + filename);
     statusBar()->showMessage("🔴 Запись начата: " + filename);
     if (m_voiceSettings.enabled) {
