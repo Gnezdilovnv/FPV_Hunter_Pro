@@ -23,7 +23,7 @@ jobs:
       run: |
         cd build
         make -j4
-    - name: Copy libiio.dll
+    - name: Copy libiio.dll and dependencies
       shell: msys2 {0}
       run: |
         mkdir dist
