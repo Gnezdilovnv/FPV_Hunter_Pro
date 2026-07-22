@@ -189,7 +189,7 @@ private:
 };
 
 // ====================================================================
-// КЛАСС PLUTO (все методы public + исправления)
+// КЛАСС PLUTO
 // ====================================================================
 
 class PlutoAdvanced {
@@ -240,14 +240,8 @@ public:
     }
     
     void disconnect() {
-        if (buffer) { 
-            iio_buffer_destroy(buffer); 
-            buffer = nullptr; 
-        }
-        if (ctx) { 
-            iio_context_destroy(ctx); 
-            ctx = nullptr; 
-        }
+        if (buffer) { iio_buffer_destroy(buffer); buffer = nullptr; }
+        if (ctx) { iio_context_destroy(ctx); ctx = nullptr; }
         connected = false;
     }
     
@@ -313,10 +307,7 @@ public:
     std::vector<std::complex<float>> receiveSamples(size_t count = 4096) {
         std::vector<std::complex<float>> result;
         if (!connected || !rx_channel) return result;
-        if (buffer) { 
-            iio_buffer_destroy(buffer); 
-            buffer = nullptr; 
-        }
+        if (buffer) { iio_buffer_destroy(buffer); buffer = nullptr; }
         buffer = iio_device_create_buffer(rx, count, false);
         if (!buffer) return result;
         ssize_t bytes = iio_buffer_refill(buffer);
@@ -400,7 +391,7 @@ private:
 };
 
 // ====================================================================
-// КЛАССЫ ВИДЖЕТОВ
+// СПЕКТРОГРАММА
 // ====================================================================
 
 class SpectrumWidget : public QWidget {
@@ -529,7 +520,7 @@ double SpectrumWidget::mapXToFreq(int x, int width) const {
 }
 
 // ====================================================================
-// ВИДЕО-ОКНО
+// ВИДЕО-ОКНО (ОБЪЯВЛЕНИЕ)
 // ====================================================================
 
 class VideoThumbnail : public QFrame {
@@ -553,87 +544,8 @@ private:
     FPVHunterPro* m_mainWindow;
 };
 
-VideoThumbnail::VideoThumbnail(const SignalInfo& sig, FPVHunterPro* parent) 
-    : QFrame((QWidget*)parent), m_signal(sig), m_mainWindow(parent) {
-    setFixedSize(200, 160);
-    setStyleSheet(QString("background-color: %1; border: 2px solid %2; border-radius: 8px;")
-        .arg(COLOR_DARK_GRAY).arg(COLOR_GRAY));
-    setCursor(Qt::PointingHandCursor);
-    QVBoxLayout* layout = new QVBoxLayout(this);
-    layout->setSpacing(2);
-    layout->setContentsMargins(4, 4, 4, 4);
-    m_videoLabel = new QLabel();
-    m_videoLabel->setFixedSize(180, 100);
-    m_videoLabel->setStyleSheet("background-color: #000000; border-radius: 4px;");
-    m_videoLabel->setAlignment(Qt::AlignCenter);
-    m_videoLabel->setText("📹");
-    QFont font = m_videoLabel->font();
-    font.setPointSize(24);
-    m_videoLabel->setFont(font);
-    layout->addWidget(m_videoLabel);
-    m_infoLabel = new QLabel();
-    m_infoLabel->setStyleSheet(QString("color: %1; font-size: 9px;").arg(COLOR_LIGHT_GRAY));
-    m_infoLabel->setAlignment(Qt::AlignCenter);
-    updateInfo();
-    layout->addWidget(m_infoLabel);
-    QHBoxLayout* btnLayout = new QHBoxLayout();
-    m_expandBtn = new QPushButton("↔ Развернуть");
-    m_expandBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; font-size: 8px; padding: 2px 6px; border-radius: 3px;")
-        .arg(COLOR_ORANGE).arg(COLOR_WHITE));
-    m_expandBtn->setCursor(Qt::PointingHandCursor);
-    btnLayout->addWidget(m_expandBtn);
-    m_infoBtn = new QPushButton("ℹ️");
-    m_infoBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; font-size: 8px; padding: 2px 6px; border-radius: 3px;")
-        .arg(COLOR_GRAY).arg(COLOR_WHITE));
-    m_infoBtn->setCursor(Qt::PointingHandCursor);
-    btnLayout->addWidget(m_infoBtn);
-    layout->addLayout(btnLayout);
-    setLayout(layout);
-    connect(m_expandBtn, &QPushButton::clicked, this, &VideoThumbnail::onExpand);
-    connect(m_infoBtn, &QPushButton::clicked, this, &VideoThumbnail::onInfo);
-}
-
-void VideoThumbnail::updateFrame(const QImage& frame) {
-    if (!frame.isNull()) {
-        QPixmap pix = QPixmap::fromImage(frame).scaled(180, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        m_videoLabel->setPixmap(pix);
-    }
-}
-
-void VideoThumbnail::updateInfo() {
-    QString text = QString("%1 МГц | %2\n%3 | %4 dBFS")
-        .arg(m_signal.frequency / 1e6, 0, 'f', 1)
-        .arg(m_signal.type)
-        .arg(m_signal.modulation.isEmpty() ? "FM" : m_signal.modulation)
-        .arg(m_signal.power, 0, 'f', 1);
-    m_infoLabel->setText(text);
-}
-
-void VideoThumbnail::setSignal(const SignalInfo& newSignal) {
-    m_signal = newSignal;
-    updateInfo();
-    if (m_signal.hasVideo && !m_signal.lastFrame.isNull()) {
-        updateFrame(m_signal.lastFrame);
-    }
-}
-
-void VideoThumbnail::onExpand() {
-    if (m_mainWindow) m_mainWindow->onVideoExpanded(m_signal);
-}
-
-void VideoThumbnail::onInfo() {
-    if (m_mainWindow) m_mainWindow->showSignalInfo(m_signal);
-}
-
-void VideoThumbnail::mousePressEvent(QMouseEvent* event) {
-    if (event->button() == Qt::LeftButton) {
-        onExpand();
-    }
-    QFrame::mousePressEvent(event);
-}
-
 // ====================================================================
-// ПОЛНОЭКРАННОЕ ВИДЕО
+// ПОЛНОЭКРАННОЕ ВИДЕО (ОБЪЯВЛЕНИЕ)
 // ====================================================================
 
 class FullscreenVideoWindow : public QWidget {
@@ -662,176 +574,8 @@ private:
     QTimer* m_updateTimer;
 };
 
-FullscreenVideoWindow::FullscreenVideoWindow(const SignalInfo& initialSignal, 
-                          const std::vector<SignalInfo>& allSignals,
-                          FPVHunterPro* parent)
-    : QWidget((QWidget*)parent), m_currentSignal(initialSignal), m_allSignals(allSignals), m_mainWindow(parent) {
-    setWindowTitle(QString("FPV Hunter - Видео на %1 МГц").arg(initialSignal.frequency / 1e6, 0, 'f', 1));
-    setMinimumSize(900, 650);
-    setStyleSheet(QString("background-color: %1;").arg(COLOR_BLACK));
-    setWindowFlags(Qt::Window);
-    QHBoxLayout* mainLayout = new QHBoxLayout(this);
-    mainLayout->setSpacing(4);
-    mainLayout->setContentsMargins(4, 4, 4, 4);
-    QWidget* videoWidget = new QWidget();
-    videoWidget->setStyleSheet(QString("background-color: #000000; border: 2px solid %1; border-radius: 8px;")
-        .arg(COLOR_ORANGE));
-    QVBoxLayout* videoLayout = new QVBoxLayout(videoWidget);
-    m_videoLabel = new QLabel();
-    m_videoLabel->setAlignment(Qt::AlignCenter);
-    m_videoLabel->setMinimumSize(640, 480);
-    m_videoLabel->setStyleSheet("color: #ffffff; font-size: 18px;");
-    m_videoLabel->setText("📹 Ожидание видео...");
-    QFont font = m_videoLabel->font();
-    font.setPointSize(36);
-    m_videoLabel->setFont(font);
-    videoLayout->addWidget(m_videoLabel);
-    QHBoxLayout* infoLayout = new QHBoxLayout();
-    m_infoLabel = new QLabel();
-    m_infoLabel->setStyleSheet(QString("color: %1; font-size: 12px; padding: 4px; background-color: %2; border-radius: 4px;")
-        .arg(COLOR_WHITE).arg(COLOR_DARK_GRAY));
-    infoLayout->addWidget(m_infoLabel);
-    m_recordingIndicator = new QLabel("⏸");
-    m_recordingIndicator->setStyleSheet(QString("color: %1; font-size: 14px; padding: 4px;")
-        .arg(COLOR_RED));
-    infoLayout->addWidget(m_recordingIndicator);
-    infoLayout->addStretch();
-    videoLayout->addLayout(infoLayout);
-    mainLayout->addWidget(videoWidget, 3);
-    QWidget* listWidget = new QWidget();
-    listWidget->setMaximumWidth(300);
-    listWidget->setStyleSheet(QString("background-color: %1; border-left: 2px solid %2;")
-        .arg(COLOR_DARK_GRAY).arg(COLOR_GRAY));
-    QVBoxLayout* listLayout = new QVBoxLayout(listWidget);
-    QLabel* titleLabel = new QLabel("📋 ДРУГИЕ ВИДЕО");
-    titleLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 14px; padding: 8px;")
-        .arg(COLOR_ORANGE));
-    listLayout->addWidget(titleLabel);
-    QScrollArea* scrollArea = new QScrollArea();
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setStyleSheet("border: none; background-color: transparent;");
-    m_listContainer = new QWidget();
-    QVBoxLayout* containerLayout = new QVBoxLayout(m_listContainer);
-    containerLayout->setSpacing(6);
-    containerLayout->setContentsMargins(4, 4, 4, 4);
-    for (const auto& s : allSignals) {
-        if (s.hasVideo && std::abs(s.frequency - initialSignal.frequency) > 0.1) {
-            QWidget* item = createVideoItem(s);
-            containerLayout->addWidget(item);
-        }
-    }
-    containerLayout->addStretch();
-    scrollArea->setWidget(m_listContainer);
-    listLayout->addWidget(scrollArea);
-    QPushButton* closeBtn = new QPushButton("✕ Закрыть");
-    closeBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; padding: 8px; border-radius: 4px; font-weight: bold;")
-        .arg(COLOR_RED).arg(COLOR_WHITE));
-    closeBtn->setCursor(Qt::PointingHandCursor);
-    connect(closeBtn, &QPushButton::clicked, this, &FullscreenVideoWindow::close);
-    listLayout->addWidget(closeBtn);
-    mainLayout->addWidget(listWidget, 1);
-    m_updateTimer = new QTimer(this);
-    connect(m_updateTimer, &QTimer::timeout, this, &FullscreenVideoWindow::updateVideoFrame);
-    m_updateTimer->start(50);
-}
-
-void FullscreenVideoWindow::updateVideoFrame() {
-    QImage frame(640, 480, QImage::Format_RGB888);
-    frame.fill(Qt::black);
-    QPainter painter(&frame);
-    painter.setPen(Qt::white);
-    for (int i = 0; i < 640; ++i) {
-        int y = 240 + 80 * sin(i * 0.02 + QDateTime::currentMSecsSinceEpoch() / 1000.0);
-        painter.drawPoint(i, y);
-    }
-    painter.setPen(QColor(COLOR_GREEN));
-    painter.drawText(20, 40, QString("📡 %1 МГц | %2 | %3 dBFS")
-        .arg(m_currentSignal.frequency / 1e6, 0, 'f', 1)
-        .arg(m_currentSignal.type)
-        .arg(m_currentSignal.power, 0, 'f', 1));
-    painter.drawText(20, 65, QString("🔄 %1 | %2")
-        .arg(m_currentSignal.modulation.isEmpty() ? "FM" : m_currentSignal.modulation)
-        .arg(m_currentSignal.standard.isEmpty() ? "PAL" : m_currentSignal.standard));
-    updateVideo(frame);
-}
-
-void FullscreenVideoWindow::updateVideo(const QImage& frame) {
-    if (!frame.isNull()) {
-        QPixmap pix = QPixmap::fromImage(frame).scaled(m_videoLabel->width(), m_videoLabel->height(), 
-            Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        m_videoLabel->setPixmap(pix);
-    }
-}
-
-void FullscreenVideoWindow::updateInfo() {
-    m_infoLabel->setText(QString("📡 %1 МГц | %2 | %3 dBFS | %4 | %5")
-        .arg(m_currentSignal.frequency / 1e6, 0, 'f', 1)
-        .arg(m_currentSignal.type)
-        .arg(m_currentSignal.power, 0, 'f', 1)
-        .arg(m_currentSignal.modulation.isEmpty() ? "FM" : m_currentSignal.modulation)
-        .arg(m_currentSignal.standard.isEmpty() ? "PAL" : m_currentSignal.standard));
-}
-
-void FullscreenVideoWindow::switchToSignal(const SignalInfo& signal) {
-    m_currentSignal = signal;
-    updateInfo();
-    setWindowTitle(QString("FPV Hunter - Видео на %1 МГц").arg(signal.frequency / 1e6, 0, 'f', 1));
-    if (m_mainWindow) {
-        m_mainWindow->setCurrentVideoSignal(signal);
-    }
-    emit signalSwitched(signal);
-}
-
-void FullscreenVideoWindow::closeEvent(QCloseEvent* event) {
-    m_updateTimer->stop();
-    QWidget::closeEvent(event);
-}
-
-QWidget* FullscreenVideoWindow::createVideoItem(const SignalInfo& signal) {
-    QWidget* item = new QWidget();
-    item->setStyleSheet(QString("background-color: %1; border: 1px solid %2; border-radius: 6px; padding: 4px;")
-        .arg(COLOR_BLACK).arg(COLOR_GRAY));
-    item->setCursor(Qt::PointingHandCursor);
-    QHBoxLayout* layout = new QHBoxLayout(item);
-    layout->setSpacing(4);
-    layout->setContentsMargins(4, 4, 4, 4);
-    QLabel* preview = new QLabel();
-    preview->setFixedSize(70, 50);
-    preview->setStyleSheet("background-color: #000000; border-radius: 4px;");
-    if (!signal.lastFrame.isNull()) {
-        QPixmap pix = QPixmap::fromImage(signal.lastFrame).scaled(70, 50, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        preview->setPixmap(pix);
-    } else {
-        preview->setText("📹");
-        preview->setAlignment(Qt::AlignCenter);
-        QFont font = preview->font();
-        font.setPointSize(14);
-        preview->setFont(font);
-    }
-    layout->addWidget(preview);
-    QVBoxLayout* infoLayout = new QVBoxLayout();
-    QLabel* freqLabel = new QLabel(QString("%1 МГц").arg(signal.frequency / 1e6, 0, 'f', 1));
-    freqLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 10px;").arg(COLOR_WHITE));
-    infoLayout->addWidget(freqLabel);
-    QLabel* typeLabel = new QLabel(signal.type);
-    typeLabel->setStyleSheet(QString("color: %1; font-size: 9px;").arg(COLOR_LIGHT_GRAY));
-    infoLayout->addWidget(typeLabel);
-    layout->addLayout(infoLayout);
-    QPushButton* switchBtn = new QPushButton("▶");
-    switchBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; border-radius: 4px; padding: 4px 8px; font-weight: bold;")
-        .arg(COLOR_ORANGE).arg(COLOR_WHITE));
-    switchBtn->setCursor(Qt::PointingHandCursor);
-    switchBtn->setFixedSize(30, 30);
-    connect(switchBtn, &QPushButton::clicked, [this, signal]() {
-        switchToSignal(signal);
-    });
-    layout->addWidget(switchBtn);
-    item->setLayout(layout);
-    return item;
-}
-
 // ====================================================================
-// ГЛАВНОЕ ОКНО FPVHunterPro
+// ГЛАВНОЕ ОКНО FPVHunterPro (ПОЛНОЕ ОПРЕДЕЛЕНИЕ)
 // ====================================================================
 
 class FPVHunterPro : public QMainWindow {
@@ -911,6 +655,10 @@ private:
     friend class VideoThumbnail;
     friend class FullscreenVideoWindow;
 };
+
+// ====================================================================
+// РЕАЛИЗАЦИЯ SPECTRUMWIDGET (уже выше)
+// ====================================================================
 
 // ====================================================================
 // РЕАЛИЗАЦИЯ FPVHunterPro
@@ -1861,6 +1609,261 @@ QString FPVHunterPro::getStyle() {
     )")
     .arg(COLOR_BLACK, COLOR_WHITE, COLOR_DARK_GRAY, COLOR_GRAY, 
          COLOR_ORANGE, COLOR_GREEN, COLOR_LIGHT_GRAY);
+}
+
+// ====================================================================
+// РЕАЛИЗАЦИЯ VIDEOTHUMBNAIL (ПОСЛЕ FPVHunterPro)
+// ====================================================================
+
+VideoThumbnail::VideoThumbnail(const SignalInfo& sig, FPVHunterPro* parent) 
+    : QFrame((QWidget*)parent), m_signal(sig), m_mainWindow(parent) {
+    setFixedSize(200, 160);
+    setStyleSheet(QString("background-color: %1; border: 2px solid %2; border-radius: 8px;")
+        .arg(COLOR_DARK_GRAY).arg(COLOR_GRAY));
+    setCursor(Qt::PointingHandCursor);
+    QVBoxLayout* layout = new QVBoxLayout(this);
+    layout->setSpacing(2);
+    layout->setContentsMargins(4, 4, 4, 4);
+    m_videoLabel = new QLabel();
+    m_videoLabel->setFixedSize(180, 100);
+    m_videoLabel->setStyleSheet("background-color: #000000; border-radius: 4px;");
+    m_videoLabel->setAlignment(Qt::AlignCenter);
+    m_videoLabel->setText("📹");
+    QFont font = m_videoLabel->font();
+    font.setPointSize(24);
+    m_videoLabel->setFont(font);
+    layout->addWidget(m_videoLabel);
+    m_infoLabel = new QLabel();
+    m_infoLabel->setStyleSheet(QString("color: %1; font-size: 9px;").arg(COLOR_LIGHT_GRAY));
+    m_infoLabel->setAlignment(Qt::AlignCenter);
+    updateInfo();
+    layout->addWidget(m_infoLabel);
+    QHBoxLayout* btnLayout = new QHBoxLayout();
+    m_expandBtn = new QPushButton("↔ Развернуть");
+    m_expandBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; font-size: 8px; padding: 2px 6px; border-radius: 3px;")
+        .arg(COLOR_ORANGE).arg(COLOR_WHITE));
+    m_expandBtn->setCursor(Qt::PointingHandCursor);
+    btnLayout->addWidget(m_expandBtn);
+    m_infoBtn = new QPushButton("ℹ️");
+    m_infoBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; font-size: 8px; padding: 2px 6px; border-radius: 3px;")
+        .arg(COLOR_GRAY).arg(COLOR_WHITE));
+    m_infoBtn->setCursor(Qt::PointingHandCursor);
+    btnLayout->addWidget(m_infoBtn);
+    layout->addLayout(btnLayout);
+    setLayout(layout);
+    connect(m_expandBtn, &QPushButton::clicked, this, &VideoThumbnail::onExpand);
+    connect(m_infoBtn, &QPushButton::clicked, this, &VideoThumbnail::onInfo);
+}
+
+void VideoThumbnail::updateFrame(const QImage& frame) {
+    if (!frame.isNull()) {
+        QPixmap pix = QPixmap::fromImage(frame).scaled(180, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        m_videoLabel->setPixmap(pix);
+    }
+}
+
+void VideoThumbnail::updateInfo() {
+    QString text = QString("%1 МГц | %2\n%3 | %4 dBFS")
+        .arg(m_signal.frequency / 1e6, 0, 'f', 1)
+        .arg(m_signal.type)
+        .arg(m_signal.modulation.isEmpty() ? "FM" : m_signal.modulation)
+        .arg(m_signal.power, 0, 'f', 1);
+    m_infoLabel->setText(text);
+}
+
+void VideoThumbnail::setSignal(const SignalInfo& newSignal) {
+    m_signal = newSignal;
+    updateInfo();
+    if (m_signal.hasVideo && !m_signal.lastFrame.isNull()) {
+        updateFrame(m_signal.lastFrame);
+    }
+}
+
+void VideoThumbnail::onExpand() {
+    if (m_mainWindow) m_mainWindow->onVideoExpanded(m_signal);
+}
+
+void VideoThumbnail::onInfo() {
+    if (m_mainWindow) m_mainWindow->showSignalInfo(m_signal);
+}
+
+void VideoThumbnail::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        onExpand();
+    }
+    QFrame::mousePressEvent(event);
+}
+
+// ====================================================================
+// РЕАЛИЗАЦИЯ FULLSCREENVIDEOWINDOW (ПОСЛЕ FPVHunterPro)
+// ====================================================================
+
+FullscreenVideoWindow::FullscreenVideoWindow(const SignalInfo& initialSignal, 
+                          const std::vector<SignalInfo>& allSignals,
+                          FPVHunterPro* parent)
+    : QWidget((QWidget*)parent), m_currentSignal(initialSignal), m_allSignals(allSignals), m_mainWindow(parent) {
+    setWindowTitle(QString("FPV Hunter - Видео на %1 МГц").arg(initialSignal.frequency / 1e6, 0, 'f', 1));
+    setMinimumSize(900, 650);
+    setStyleSheet(QString("background-color: %1;").arg(COLOR_BLACK));
+    setWindowFlags(Qt::Window);
+    QHBoxLayout* mainLayout = new QHBoxLayout(this);
+    mainLayout->setSpacing(4);
+    mainLayout->setContentsMargins(4, 4, 4, 4);
+    QWidget* videoWidget = new QWidget();
+    videoWidget->setStyleSheet(QString("background-color: #000000; border: 2px solid %1; border-radius: 8px;")
+        .arg(COLOR_ORANGE));
+    QVBoxLayout* videoLayout = new QVBoxLayout(videoWidget);
+    m_videoLabel = new QLabel();
+    m_videoLabel->setAlignment(Qt::AlignCenter);
+    m_videoLabel->setMinimumSize(640, 480);
+    m_videoLabel->setStyleSheet("color: #ffffff; font-size: 18px;");
+    m_videoLabel->setText("📹 Ожидание видео...");
+    QFont font = m_videoLabel->font();
+    font.setPointSize(36);
+    m_videoLabel->setFont(font);
+    videoLayout->addWidget(m_videoLabel);
+    QHBoxLayout* infoLayout = new QHBoxLayout();
+    m_infoLabel = new QLabel();
+    m_infoLabel->setStyleSheet(QString("color: %1; font-size: 12px; padding: 4px; background-color: %2; border-radius: 4px;")
+        .arg(COLOR_WHITE).arg(COLOR_DARK_GRAY));
+    infoLayout->addWidget(m_infoLabel);
+    m_recordingIndicator = new QLabel("⏸");
+    m_recordingIndicator->setStyleSheet(QString("color: %1; font-size: 14px; padding: 4px;")
+        .arg(COLOR_RED));
+    infoLayout->addWidget(m_recordingIndicator);
+    infoLayout->addStretch();
+    videoLayout->addLayout(infoLayout);
+    mainLayout->addWidget(videoWidget, 3);
+    QWidget* listWidget = new QWidget();
+    listWidget->setMaximumWidth(300);
+    listWidget->setStyleSheet(QString("background-color: %1; border-left: 2px solid %2;")
+        .arg(COLOR_DARK_GRAY).arg(COLOR_GRAY));
+    QVBoxLayout* listLayout = new QVBoxLayout(listWidget);
+    QLabel* titleLabel = new QLabel("📋 ДРУГИЕ ВИДЕО");
+    titleLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 14px; padding: 8px;")
+        .arg(COLOR_ORANGE));
+    listLayout->addWidget(titleLabel);
+    QScrollArea* scrollArea = new QScrollArea();
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setStyleSheet("border: none; background-color: transparent;");
+    m_listContainer = new QWidget();
+    QVBoxLayout* containerLayout = new QVBoxLayout(m_listContainer);
+    containerLayout->setSpacing(6);
+    containerLayout->setContentsMargins(4, 4, 4, 4);
+    for (const auto& s : allSignals) {
+        if (s.hasVideo && std::abs(s.frequency - initialSignal.frequency) > 0.1) {
+            QWidget* item = createVideoItem(s);
+            containerLayout->addWidget(item);
+        }
+    }
+    containerLayout->addStretch();
+    scrollArea->setWidget(m_listContainer);
+    listLayout->addWidget(scrollArea);
+    QPushButton* closeBtn = new QPushButton("✕ Закрыть");
+    closeBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; padding: 8px; border-radius: 4px; font-weight: bold;")
+        .arg(COLOR_RED).arg(COLOR_WHITE));
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    connect(closeBtn, &QPushButton::clicked, this, &FullscreenVideoWindow::close);
+    listLayout->addWidget(closeBtn);
+    mainLayout->addWidget(listWidget, 1);
+    m_updateTimer = new QTimer(this);
+    connect(m_updateTimer, &QTimer::timeout, this, &FullscreenVideoWindow::updateVideoFrame);
+    m_updateTimer->start(50);
+}
+
+void FullscreenVideoWindow::updateVideoFrame() {
+    QImage frame(640, 480, QImage::Format_RGB888);
+    frame.fill(Qt::black);
+    QPainter painter(&frame);
+    painter.setPen(Qt::white);
+    for (int i = 0; i < 640; ++i) {
+        int y = 240 + 80 * sin(i * 0.02 + QDateTime::currentMSecsSinceEpoch() / 1000.0);
+        painter.drawPoint(i, y);
+    }
+    painter.setPen(QColor(COLOR_GREEN));
+    painter.drawText(20, 40, QString("📡 %1 МГц | %2 | %3 dBFS")
+        .arg(m_currentSignal.frequency / 1e6, 0, 'f', 1)
+        .arg(m_currentSignal.type)
+        .arg(m_currentSignal.power, 0, 'f', 1));
+    painter.drawText(20, 65, QString("🔄 %1 | %2")
+        .arg(m_currentSignal.modulation.isEmpty() ? "FM" : m_currentSignal.modulation)
+        .arg(m_currentSignal.standard.isEmpty() ? "PAL" : m_currentSignal.standard));
+    updateVideo(frame);
+}
+
+void FullscreenVideoWindow::updateVideo(const QImage& frame) {
+    if (!frame.isNull()) {
+        QPixmap pix = QPixmap::fromImage(frame).scaled(m_videoLabel->width(), m_videoLabel->height(), 
+            Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        m_videoLabel->setPixmap(pix);
+    }
+}
+
+void FullscreenVideoWindow::updateInfo() {
+    m_infoLabel->setText(QString("📡 %1 МГц | %2 | %3 dBFS | %4 | %5")
+        .arg(m_currentSignal.frequency / 1e6, 0, 'f', 1)
+        .arg(m_currentSignal.type)
+        .arg(m_currentSignal.power, 0, 'f', 1)
+        .arg(m_currentSignal.modulation.isEmpty() ? "FM" : m_currentSignal.modulation)
+        .arg(m_currentSignal.standard.isEmpty() ? "PAL" : m_currentSignal.standard));
+}
+
+void FullscreenVideoWindow::switchToSignal(const SignalInfo& signal) {
+    m_currentSignal = signal;
+    updateInfo();
+    setWindowTitle(QString("FPV Hunter - Видео на %1 МГц").arg(signal.frequency / 1e6, 0, 'f', 1));
+    if (m_mainWindow) {
+        m_mainWindow->setCurrentVideoSignal(signal);
+    }
+    emit signalSwitched(signal);
+}
+
+void FullscreenVideoWindow::closeEvent(QCloseEvent* event) {
+    m_updateTimer->stop();
+    QWidget::closeEvent(event);
+}
+
+QWidget* FullscreenVideoWindow::createVideoItem(const SignalInfo& signal) {
+    QWidget* item = new QWidget();
+    item->setStyleSheet(QString("background-color: %1; border: 1px solid %2; border-radius: 6px; padding: 4px;")
+        .arg(COLOR_BLACK).arg(COLOR_GRAY));
+    item->setCursor(Qt::PointingHandCursor);
+    QHBoxLayout* layout = new QHBoxLayout(item);
+    layout->setSpacing(4);
+    layout->setContentsMargins(4, 4, 4, 4);
+    QLabel* preview = new QLabel();
+    preview->setFixedSize(70, 50);
+    preview->setStyleSheet("background-color: #000000; border-radius: 4px;");
+    if (!signal.lastFrame.isNull()) {
+        QPixmap pix = QPixmap::fromImage(signal.lastFrame).scaled(70, 50, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        preview->setPixmap(pix);
+    } else {
+        preview->setText("📹");
+        preview->setAlignment(Qt::AlignCenter);
+        QFont font = preview->font();
+        font.setPointSize(14);
+        preview->setFont(font);
+    }
+    layout->addWidget(preview);
+    QVBoxLayout* infoLayout = new QVBoxLayout();
+    QLabel* freqLabel = new QLabel(QString("%1 МГц").arg(signal.frequency / 1e6, 0, 'f', 1));
+    freqLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 10px;").arg(COLOR_WHITE));
+    infoLayout->addWidget(freqLabel);
+    QLabel* typeLabel = new QLabel(signal.type);
+    typeLabel->setStyleSheet(QString("color: %1; font-size: 9px;").arg(COLOR_LIGHT_GRAY));
+    infoLayout->addWidget(typeLabel);
+    layout->addLayout(infoLayout);
+    QPushButton* switchBtn = new QPushButton("▶");
+    switchBtn->setStyleSheet(QString("background-color: %1; color: %2; border: none; border-radius: 4px; padding: 4px 8px; font-weight: bold;")
+        .arg(COLOR_ORANGE).arg(COLOR_WHITE));
+    switchBtn->setCursor(Qt::PointingHandCursor);
+    switchBtn->setFixedSize(30, 30);
+    connect(switchBtn, &QPushButton::clicked, [this, signal]() {
+        switchToSignal(signal);
+    });
+    layout->addWidget(switchBtn);
+    item->setLayout(layout);
+    return item;
 }
 
 // ====================================================================
