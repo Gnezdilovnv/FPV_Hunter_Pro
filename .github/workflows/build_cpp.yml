@@ -1,4 +1,4 @@
-name: Build Windows EXE (Static)
+name: Build Windows EXE (Static + libiio.dll)
 on:
   push:
     branches: [ main ]
@@ -23,8 +23,18 @@ jobs:
       run: |
         cd build
         make -j4
-    - name: Upload EXE
+    - name: Copy libiio.dll
+      shell: msys2 {0}
+      run: |
+        mkdir dist
+        cp build/FPV_Hunter_Pro.exe dist/
+        cp /mingw64/bin/libiio.dll dist/ || true
+        cp /mingw64/bin/libxml2-*.dll dist/ || true
+        cp /mingw64/bin/liblzma-*.dll dist/ || true
+        cp /mingw64/bin/libzstd-*.dll dist/ || true
+        cp /mingw64/bin/libbrotli*.dll dist/ || true
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
         name: FPV_Hunter_Pro_Static
-        path: build/FPV_Hunter_Pro.exe
+        path: dist/*
