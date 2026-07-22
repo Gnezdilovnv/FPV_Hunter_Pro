@@ -1,4 +1,4 @@
-name: Build Windows EXE with all dependencies
+name: Build Windows EXE (Static)
 on:
   push:
     branches: [ main ]
@@ -17,94 +17,14 @@ jobs:
       shell: msys2 {0}
       run: |
         mkdir build && cd build
-        cmake .. -G "Unix Makefiles" -DCMAKE_PREFIX_PATH=/mingw64 -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
+        cmake .. -G "Unix Makefiles" -DCMAKE_PREFIX_PATH=/mingw64 -DCMAKE_BUILD_TYPE=Release
     - name: Build
       shell: msys2 {0}
       run: |
         cd build
         make -j4
-    - name: Copy all dependencies
-      shell: msys2 {0}
-      run: |
-        echo "📁 Создание структуры папок..."
-        mkdir -p dist/platforms
-        mkdir -p dist/imageformats
-        mkdir -p dist/iconengines
-        mkdir -p dist/styles
-        
-        echo "📦 Копирование EXE..."
-        cp build/FPV_Hunter_Pro.exe dist/
-        
-        echo "📦 Копирование Qt5 Core DLL..."
-        cp /mingw64/bin/Qt5Core.dll dist/ || true
-        cp /mingw64/bin/Qt5Widgets.dll dist/ || true
-        cp /mingw64/bin/Qt5Gui.dll dist/ || true
-        cp /mingw64/bin/Qt5Network.dll dist/ || true
-        cp /mingw64/bin/Qt5Xml.dll dist/ || true
-        cp /mingw64/bin/Qt5Svg.dll dist/ || true
-        
-        echo "📦 Копирование MinGW DLL..."
-        cp /mingw64/bin/libgcc_s_seh-1.dll dist/ || true
-        cp /mingw64/bin/libstdc++-6.dll dist/ || true
-        cp /mingw64/bin/libwinpthread-1.dll dist/ || true
-        
-        echo "📦 Копирование libiio и зависимостей..."
-        cp /mingw64/bin/libiio.dll dist/ || true
-        cp /mingw64/bin/libxml2-*.dll dist/ || true
-        cp /mingw64/bin/liblzma-*.dll dist/ || true
-        cp /mingw64/bin/libzstd-*.dll dist/ || true
-        cp /mingw64/bin/libbrotli*.dll dist/ || true
-        
-        echo "📦 Копирование UCRT (для Windows 7)..."
-        cp /c/Windows/System32/api-ms-win-crt-*.dll dist/ || true
-        cp /c/Windows/System32/ucrtbase.dll dist/ || true
-        cp /c/Windows/System32/vcruntime140.dll dist/ || true
-        cp /c/Windows/System32/msvcp140.dll dist/ || true
-        
-        echo "📦 Копирование Qt5 плагинов..."
-        # platforms
-        if [ -f /mingw64/share/qt5/plugins/platforms/qwindows.dll ]; then
-            cp /mingw64/share/qt5/plugins/platforms/qwindows.dll dist/platforms/ || true
-            echo "  ✅ qwindows.dll"
-        else
-            echo "  ❌ qwindows.dll НЕ НАЙДЕН"
-        fi
-        
-        # imageformats
-        if [ -d /mingw64/share/qt5/plugins/imageformats ]; then
-            cp /mingw64/share/qt5/plugins/imageformats/*.dll dist/imageformats/ || true
-            echo "  ✅ imageformats/*.dll"
-        fi
-        
-        # iconengines
-        if [ -d /mingw64/share/qt5/plugins/iconengines ]; then
-            cp /mingw64/share/qt5/plugins/iconengines/*.dll dist/iconengines/ || true
-            echo "  ✅ iconengines/*.dll"
-        fi
-        
-        # styles
-        if [ -d /mingw64/share/qt5/plugins/styles ]; then
-            cp /mingw64/share/qt5/plugins/styles/*.dll dist/styles/ || true
-            echo "  ✅ styles/*.dll"
-        fi
-        
-        echo "📋 ПРОВЕРКА СТРУКТУРЫ:"
-        ls -la dist/
-        echo ""
-        echo "📁 platforms:"
-        ls -la dist/platforms/ || echo "  ⚠️ platforms не создана"
-        echo ""
-        echo "📁 imageformats:"
-        ls -la dist/imageformats/ || echo "  ⚠️ imageformats не создана"
-        echo ""
-        echo "📁 iconengines:"
-        ls -la dist/iconengines/ || echo "  ⚠️ iconengines не создана"
-        echo ""
-        echo "📁 styles:"
-        ls -la dist/styles/ || echo "  ⚠️ styles не создана"
-        
-    - name: Upload
+    - name: Upload EXE
       uses: actions/upload-artifact@v4
       with:
-        name: FPV_Hunter_Pro_v8_Complete
-        path: dist/*
+        name: FPV_Hunter_Pro_Static
+        path: build/FPV_Hunter_Pro.exe
